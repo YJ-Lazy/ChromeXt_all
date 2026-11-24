@@ -44,6 +44,7 @@ object WebViewHook : BaseHook() {
 
   private val ucViewClients = mutableSetOf<Class<*>>()
   private val ucChromeClients = mutableSetOf<Class<*>>()
+  private val ucClientViews = java.util.WeakHashMap<Any, WeakReference<Any>>()
 
   private fun handleConsoleMessage(chromeClient: Any, consoleMessage: Any) {
     val messageLevel = consoleMessage.invokeMethod { name == "messageLevel" }
@@ -54,7 +55,9 @@ object WebViewHook : BaseHook() {
         sourceId.startsWith("local://ChromeXt/init") &&
         lineNumber == Local.anchorInChromeXt) {
       val webView =
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          if (Chrome.packageName == "com.quark.browser") {
+            synchronized(ucClientViews) { ucClientViews[chromeClient]?.get() }
+          } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             records
                 .find {
                   if (Chrome.isQihoo) {
@@ -67,6 +70,10 @@ object WebViewHook : BaseHook() {
                 }
                 ?.get()
           } else Chrome.getTab()
+      if (Chrome.packageName == "com.quark.browser" && webView == null) {
+        Log.d("UC/U4 console bridge: no associated WebView")
+        return
+      }
       Listener.startAction(message, webView, chromeClient, sourceId)
     } else {
       Log.d(messageLevel.toString() + ": [${sourceId}@${lineNumber}] ${message}")
@@ -115,6 +122,10 @@ object WebViewHook : BaseHook() {
           if (client != null) {
             records.add(WeakReference(webView))
             if (Chrome.packageName == "com.quark.browser") {
+              synchronized(ucClientViews) {
+                ucClientViews.entries.removeAll { it.value.get() == null || it.value.get() === webView }
+                ucClientViews[client] = WeakReference(webView)
+              }
               hookUcWebChromeClient(client.javaClass)
             }
           }
