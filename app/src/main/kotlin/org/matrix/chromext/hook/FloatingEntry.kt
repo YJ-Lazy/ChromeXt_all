@@ -28,6 +28,7 @@ object FloatingEntryHook : BaseHook() {
   private const val MENU_MANAGE = 1
   private const val MENU_INSTALL = 2
   private const val MENU_CONSOLE = 3
+  private const val MENU_TEST = 4
 
   private val entries = WeakHashMap<Any, PopupWindow>()
 
@@ -83,6 +84,7 @@ object FloatingEntryHook : BaseHook() {
       menu.menu.add(0, MENU_INSTALL, 1, "安装当前脚本")
     }
     menu.menu.add(0, MENU_CONSOLE, 2, "开发者控制台")
+    menu.menu.add(0, MENU_TEST, 3, "JavaScript 执行测试")
     menu.setOnMenuItemClickListener { item ->
       Log.i("Quark floating menu action clicked: ${item.title}; url=$safeUrl")
       when (item.itemId) {
@@ -118,6 +120,15 @@ object FloatingEntryHook : BaseHook() {
           Log.i("Quark Eruda console requested; url=$safeUrl")
           runCatching { Chrome.evaluateJavascript(listOf(Local.openEruda), webView) }
               .onFailure { Log.ex(it, "Quark Eruda JavaScript dispatch failed") }
+          true
+        }
+        MENU_TEST -> {
+          runCatching {
+            WebViewHook.evaluateJavascript(
+                "(function(){console.log('VM_PROBE result='+(6*7));alert('VM probe: '+(6*7));})();",
+                webView,
+            )
+          }.onFailure { Log.ex(it, "VM probe dispatch failed") }
           true
         }
         else -> false
