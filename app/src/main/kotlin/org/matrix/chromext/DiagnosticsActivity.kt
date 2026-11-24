@@ -21,6 +21,8 @@ class DiagnosticsActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    actionBar?.hide()
+    window.setDecorFitsSystemWindows(true)
     title = "ChromeXt 诊断日志"
 
     val root = LinearLayout(this).apply {
@@ -28,7 +30,11 @@ class DiagnosticsActivity : Activity() {
       setPadding(dp(16), dp(12), dp(16), dp(12))
     }
     root.addView(TextView(this).apply {
-      text = "重启夸克并复现问题，再授权 Root 读取日志。调试版默认记录。"
+      text = "ChromeXt 诊断日志"
+      textSize = 22f
+    })
+    root.addView(TextView(this).apply {
+      text = "通过 Root 读取 ChromeXt Logcat 与 LSPosed 日志。"
       textSize = 14f
     })
     status = TextView(this).apply { textSize = 13f }
@@ -37,9 +43,7 @@ class DiagnosticsActivity : Activity() {
     val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     actions.addView(actionButton("刷新") { refreshLogs() })
     actions.addView(actionButton("分享日志") { shareLogs() })
-    actions.addView(actionButton("清空") {
-      Thread { LogRecorder.clear(this@DiagnosticsActivity); runOnUiThread { refreshLogs() } }.start()
-    })
+    actions.addView(actionButton("清屏") { logText.text = "" })
     root.addView(actions)
 
     val scroll = ScrollView(this)
@@ -53,6 +57,12 @@ class DiagnosticsActivity : Activity() {
     root.addView(scroll, LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     setContentView(root)
+    root.setOnApplyWindowInsetsListener { v, insets ->
+      val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
+      v.setPadding(dp(16) + bars.left, dp(12) + bars.top, dp(16) + bars.right, dp(12) + bars.bottom)
+      insets
+    }
+    root.requestApplyInsets()
     refreshLogs()
   }
 
