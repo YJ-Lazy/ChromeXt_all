@@ -37,37 +37,7 @@ object LogRecorder {
       echo '--- ChromeXt Logcat ---'
       logcat -d -t 5000 -v threadtime -s CXDiagnostics:V 2>&1
       echo '--- LSPosed module logs ---'
-      for f in /data/adb/lspd/log/modules*.log; do
-        [ -f "${'" ] || continue
-        grep -F 'org.matrix.chromext,XposedBridge' "$f" | tail -n 200
-      done
-    """.trimIndent()
-    return runCatching {
-      val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
-      val output = process.inputStream.bufferedReader().use { it.readText() }
-      val code = process.waitFor()
-      if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
-    }.getOrElse { "Root 读取失败：$it" }
-  }
-  fun read(context: Context? = null): String = root()
-  fun clear(context: Context? = null): Boolean = false
-}
-}f" ] || continue
-        grep -F 'org.matrix.chromext,XposedBridge' "${'" | tail -n 200
-      done
-    """.trimIndent()
-    return runCatching {
-      val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
-      val output = process.inputStream.bufferedReader().use { it.readText() }
-      val code = process.waitFor()
-      if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
-    }.getOrElse { "Root 读取失败：$it" }
-  }
-  fun read(context: Context? = null): String = root()
-  fun clear(context: Context? = null): Boolean = false
-}
-}f" | tail -n 200
-      done
+      grep -h -F 'org.matrix.chromext,XposedBridge' /data/adb/lspd/log/modules*.log 2>/dev/null | tail -n 200
     """.trimIndent()
     return runCatching {
       val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
