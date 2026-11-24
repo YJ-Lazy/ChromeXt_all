@@ -31,18 +31,51 @@ object LogRecorder {
     }.onFailure { android.util.Log.e("ChromeXt", "Local diagnostic write failed", it) }
   }
   internal fun writeLocal(context: Context, level: String, message: String) = write(level, message, context)
-  private fun root(context: Context, clear: Boolean): String {
-    val user = Process.myUid() / 100000
-    val dir = "/data/user/$user/com.quark.browser/files/chromext-diagnostics"
-    val cmd = if (clear) "rm -f '$dir'/hook-*.log" else
-        "id; if [ -d '$dir' ]; then for f in '$dir'/hook-*.log; do [ -f \"\$f\" ] || continue; echo \"--- \$f ---\"; tail -c 65536 \"\$f\"; done; else echo 'No hook log directory; restart Quark'; fi"
+  private fun root(): String {
+    val cmd = """
+      id
+      echo '--- ChromeXt Logcat ---'
+      logcat -d -t 5000 -v threadtime -s CXDiagnostics:V 2>&1
+      echo '--- LSPosed module logs ---'
+      for f in /data/adb/lspd/log/modules*.log; do
+        [ -f "${'" ] || continue
+        grep -F 'org.matrix.chromext,XposedBridge' "$f" | tail -n 200
+      done
+    """.trimIndent()
     return runCatching {
       val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
       val output = process.inputStream.bufferedReader().use { it.readText() }
       val code = process.waitFor()
-      if (code == 0) output.ifBlank { "操作完成，暂无日志" } else "Root 操作失败 ($code): $output"
+      if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
     }.getOrElse { "Root 读取失败：$it" }
   }
-  fun read(context: Context? = null): String = context?.let { root(it, false) } ?: "缺少 Context"
-  fun clear(context: Context? = null): Boolean = context?.let { root(it, true).startsWith("操作完成") } ?: false
+  fun read(context: Context? = null): String = root()
+  fun clear(context: Context? = null): Boolean = false
+}
+}f" ] || continue
+        grep -F 'org.matrix.chromext,XposedBridge' "${'" | tail -n 200
+      done
+    """.trimIndent()
+    return runCatching {
+      val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
+      val output = process.inputStream.bufferedReader().use { it.readText() }
+      val code = process.waitFor()
+      if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
+    }.getOrElse { "Root 读取失败：$it" }
+  }
+  fun read(context: Context? = null): String = root()
+  fun clear(context: Context? = null): Boolean = false
+}
+}f" | tail -n 200
+      done
+    """.trimIndent()
+    return runCatching {
+      val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
+      val output = process.inputStream.bufferedReader().use { it.readText() }
+      val code = process.waitFor()
+      if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
+    }.getOrElse { "Root 读取失败：$it" }
+  }
+  fun read(context: Context? = null): String = root()
+  fun clear(context: Context? = null): Boolean = false
 }
