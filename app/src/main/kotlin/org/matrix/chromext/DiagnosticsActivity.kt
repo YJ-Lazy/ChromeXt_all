@@ -28,18 +28,9 @@ class DiagnosticsActivity : Activity() {
       setPadding(dp(16), dp(12), dp(16), dp(12))
     }
     root.addView(TextView(this).apply {
-      text = "开启记录后，重启夸克并复现问题，再回到这里导出日志。日志保存在本机应用私有目录，不会自动上传。"
+      text = "重启夸克并复现问题，再授权 Root 读取日志。调试版默认记录。"
       textSize = 14f
     })
-    recording = Switch(this).apply {
-      text = "记录夸克运行日志"
-      isChecked = LogRecorder.isEnabled(this@DiagnosticsActivity)
-      setOnCheckedChangeListener { _, checked ->
-        LogRecorder.setEnabled(this@DiagnosticsActivity, checked)
-        refreshLogs()
-      }
-    }
-    root.addView(recording)
     status = TextView(this).apply { textSize = 13f }
     root.addView(status)
 
@@ -47,8 +38,7 @@ class DiagnosticsActivity : Activity() {
     actions.addView(actionButton("刷新") { refreshLogs() })
     actions.addView(actionButton("分享日志") { shareLogs() })
     actions.addView(actionButton("清空") {
-      LogRecorder.clear(this@DiagnosticsActivity)
-      refreshLogs()
+      Thread { LogRecorder.clear(this@DiagnosticsActivity); runOnUiThread { refreshLogs() } }.start()
     })
     root.addView(actions)
 
@@ -73,8 +63,11 @@ class DiagnosticsActivity : Activity() {
       }
 
   private fun refreshLogs() {
-    logText.text = LogRecorder.read(this)
-    status.text = if (recording.isChecked) "日志记录已开启" else "日志记录已关闭"
+    status.text = "正在读取 Root 日志…"
+    Thread {
+      val result = LogRecorder.read(this)
+      runOnUiThread { logText.text = result; status.text = "Root 读取结束" }
+    }.start()
   }
 
   private fun shareLogs() {
@@ -82,7 +75,7 @@ class DiagnosticsActivity : Activity() {
         Intent(Intent.ACTION_SEND).apply {
           type = "text/plain"
           putExtra(Intent.EXTRA_SUBJECT, "ChromeXt 夸克诊断日志")
-          putExtra(Intent.EXTRA_TEXT, LogRecorder.read(this@DiagnosticsActivity))
+          putExtra(Intent.EXTRA_TEXT, logText.text.toString().takeLast(200000))
         },
         "分享诊断日志",
     ))
