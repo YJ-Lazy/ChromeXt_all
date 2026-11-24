@@ -31,6 +31,10 @@
         <meta-data android:name="xposeddescription" android:value="@string/xposed_desc" />
         <meta-data android:name="xposedminversion" android:value="54" />
         <meta-data android:name="xposedscope" android:resource="@array/xposedscope" />
+        <provider
+            android:name=".DiagnosticsProvider"
+            android:authorities="org.matrix.chromext.diagnostics"
+            android:exported="true" />
         <activity
             android:name=".DiagnosticsActivity"
             android:label="ChromeXt 诊断日志"
