@@ -98,7 +98,7 @@ class ScriptManagerActivity : Activity() {
       gravity = android.view.Gravity.CENTER_VERTICAL
       addView(ImageView(this@ScriptManagerActivity).apply { setImageResource(R.mipmap.ic_launcher) },LinearLayout.LayoutParams(dp(48),dp(48)).apply { rightMargin=dp(12) })
       addView(column().apply { addView(label("ScriptHub",27f,true)); addView(label("跨浏览器脚本管理",12f)) },LinearLayout.LayoutParams(0,-2,1f))
-      addView(label("v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) })
+      addView(column().apply { addView(label("v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) }); addView(action("设置") { gestureSettings() }) },LinearLayout.LayoutParams(-2,-2))
     })
     root.addView(View(this),LinearLayout.LayoutParams(1,dp(14)))
     root.addView(card().apply {
@@ -537,15 +537,40 @@ class ScriptManagerActivity : Activity() {
     dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     dialog.show()
   }
+  private val gesturePrefs by lazy { getSharedPreferences("scripthub_ui",0) }
+  private fun gestureSettings() {
+    val options=arrayOf("编辑脚本","删除脚本","关闭手势")
+    val values=arrayOf("edit","delete","none")
+    val body=column().apply { setPadding(dp(20),dp(8),dp(20),dp(8)) }
+    fun picker(title:String,key:String,fallback:String):Spinner {
+      body.addView(label(title,14f,true))
+      return Spinner(this).apply {
+        adapter=ArrayAdapter(this@ScriptManagerActivity,android.R.layout.simple_spinner_dropdown_item,options)
+        setSelection(values.indexOf(gesturePrefs.getString(key,fallback)).coerceAtLeast(0))
+        body.addView(this,LinearLayout.LayoutParams(-1,dp(52)))
+      }
+    }
+    val left=picker("左滑","swipe_left","edit")
+    val right=picker("右滑","swipe_right","delete")
+    AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("手势设置").setView(body)
+      .setNeutralButton("恢复默认") { _,_ -> gesturePrefs.edit().remove("swipe_left").remove("swipe_right").apply(); refresh() }
+      .setNegativeButton("取消",null).setPositiveButton("保存") { _,_ ->
+        gesturePrefs.edit().putString("swipe_left",values[left.selectedItemPosition]).putString("swipe_right",values[right.selectedItemPosition]).apply()
+        refresh()
+      }.show()
+  }
   private fun swipeCard(id:String, content:View):View {
     val ctx=this
     val width=dp(88)
+    val left=gesturePrefs.getString("swipe_left","edit") ?: "edit"
+    val right=gesturePrefs.getString("swipe_right","delete") ?: "delete"
+    if(left=="none" && right=="none") return content
     val frame=object:FrameLayout(ctx) {
       var x=0f; var y=0f; var initial=0f; var dragging=false
       override fun onInterceptTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
           0 -> { x=e.x; y=e.y; content.animate().cancel(); initial=content.translationX; dragging=false }
-          2 -> if(kotlin.math.abs(e.x-x)>dp(16) && kotlin.math.abs(e.x-x)>kotlin.math.abs(e.y-y)*1.5f) {
+          2 -> if((initial!=0f || (e.x>x && right!="none") || (e.x<x && left!="none")) && kotlin.math.abs(e.x-x)>dp(16) && kotlin.math.abs(e.x-x)>kotlin.math.abs(e.y-y)*1.5f) {
             dragging=true; parent.requestDisallowInterceptTouchEvent(true); return true
           }
         }
@@ -553,15 +578,24 @@ class ScriptManagerActivity : Activity() {
       }
       override fun onTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
-          2 -> content.translationX=(initial+e.x-x).coerceIn(-width.toFloat(),width.toFloat())
+          2 -> content.translationX=(initial+e.x-x).coerceIn(if(left=="none") 0f else -width.toFloat(),if(right=="none") 0f else width.toFloat())
           1,3 -> { content.animate().translationX(when { content.translationX>width/2 -> width.toFloat(); content.translationX< -width/2 -> -width.toFloat(); else -> 0f }).setDuration(150).start(); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
         }
         return true
       }
     }
     frame.layoutParams=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) }
-    frame.addView(Button(this).apply { text="删除"; setTextColor(Color.WHITE); background=panel(0xFFC43C46.toInt(),12); setOnClickListener { deleteScript(id) } },FrameLayout.LayoutParams(width,-1,android.view.Gravity.START))
-    frame.addView(Button(this).apply { text="编辑"; setTextColor(Color.WHITE); background=panel(0xFF345DC5.toInt(),12); setOnClickListener { editScript(id) } },FrameLayout.LayoutParams(width,-1,android.view.Gravity.END))
+    fun addGesture(kind:String,gravity:Int) {
+      if(kind=="none") return
+      frame.addView(Button(this).apply {
+        text=if(kind=="delete") "删除" else "编辑"
+        setTextColor(Color.WHITE)
+        background=panel(if(kind=="delete") 0xFFC43C46.toInt() else 0xFF345DC5.toInt(),12)
+        setOnClickListener { if(kind=="delete") deleteScript(id) else editScript(id) }
+      },FrameLayout.LayoutParams(width,-1,gravity))
+    }
+    addGesture(right,android.view.Gravity.LEFT)
+    addGesture(left,android.view.Gravity.RIGHT)
     frame.addView(content,FrameLayout.LayoutParams(-1,-2))
     return frame
   }
