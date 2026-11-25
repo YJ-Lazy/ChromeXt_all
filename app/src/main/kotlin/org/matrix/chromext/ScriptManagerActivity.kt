@@ -28,23 +28,25 @@ class ScriptManagerActivity : Activity() {
   override fun onResume() { super.onResume(); refresh() }
   private fun refresh() {
     list.removeAllViews()
-    val browsers = resources.getStringArray(R.array.xposedscope)
-    for (pkg in browsers) {
-      val launch = packageManager.getLaunchIntentForPackage(pkg)
-      val inventory = prefs.getString("inventory:$pkg", null)
-      if (launch == null && inventory == null) continue
-      val label = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg,0)).toString() }.getOrDefault(pkg)
-      list.addView(TextView(this).apply { text = label; textSize = 20f })
-      if (launch != null) list.addView(Button(this).apply { text = "打开 $label"; setOnClickListener { startActivity(launch) } })
-      val ids = JSONArray(inventory ?: "[]")
-      if (ids.length() == 0) list.addView(TextView(this).apply { text = "暂无同步脚本" })
-      for (i in 0 until ids.length()) {
-        val id = ids.getString(i)
-        val key = "enabled:$pkg:$id"
+    val browsers = resources.getStringArray(R.array.xposedscope).filter {
+      packageManager.getLaunchIntentForPackage(it) != null || prefs.contains("inventory:$it")
+    }
+    val ids = prefs.all.keys.filter { it.startsWith("source:") }.map { it.removePrefix("source:") }.sorted()
+    if (ids.isEmpty()) list.addView(TextView(this).apply { text = "暂无同步脚本，请先在浏览器安装脚本并刷新网页。" })
+    for (id in ids) {
+      list.addView(TextView(this).apply { text = id; textSize = 20f })
+      for (pkg in browsers) {
+        val inventory = JSONArray(prefs.getString("inventory:$pkg", "[]"))
+        val installed = (0 until inventory.length()).any { inventory.getString(it) == id }
+        val assigned = "assigned:$pkg:$id"
+        val enabled = "enabled:$pkg:$id"
+        val label = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg,0)).toString() }.getOrDefault(pkg)
         list.addView(Switch(this).apply {
-          text = id
-          isChecked = prefs.getBoolean(key,true)
-          setOnCheckedChangeListener { _, enabled -> prefs.edit().putBoolean(key,enabled).apply() }
+          text = label + if (installed) " · 已安装" else " · 分配"
+          isChecked = prefs.getBoolean(enabled,true) && (installed || prefs.getBoolean(assigned,false))
+          setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(assigned,checked).putBoolean(enabled,checked).apply()
+          }
         })
       }
     }
