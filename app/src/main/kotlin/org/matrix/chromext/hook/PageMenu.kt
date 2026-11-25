@@ -222,7 +222,8 @@ object PageMenuHook : BaseHook() {
         // whose icon setter we cannot name still gets a working button.
         runCatching {
           if (button is ImageButton) {
-            button.setImageResource(R.drawable.ic_book)
+            button.setImageDrawable(runCatching { Resource.moduleResources(ctx).getDrawable(R.drawable.ic_book, null) }
+                .getOrElse { android.content.res.Resources.getSystem().getDrawable(android.R.drawable.ic_menu_info_details, null) })
           } else {
             // MaterialButton takes a Drawable, and its setIcon does not survive obfuscation, so
             // match the signature and keep the inherited background setters out of the way.
@@ -531,7 +532,8 @@ object PageMenuHook : BaseHook() {
                   if (it.key.toString() == "MENU_ITEM_ID") {
                     _value.set(it.value, readerMode.ID)
                   } else if (it.key.toString() == "ICON") {
-                    _value.set(it.value, ctx.resources.getDrawable(R.drawable.ic_book, null))
+                    _value.set(it.value, runCatching { Resource.moduleResources(ctx).getDrawable(R.drawable.ic_book, null) }
+                        .getOrElse { android.content.res.Resources.getSystem().getDrawable(android.R.drawable.ic_menu_info_details, null) })
                   }
                 }
               }
@@ -555,8 +557,20 @@ object PageMenuHook : BaseHook() {
           }
 
           fun standardMenuItem(id: Int, titleId: Int, iconResId: Int): Any? {
-            if (buildModelForStandardMenuItem != null && runCatching { ctx.getString(titleId); ctx.resources.getDrawable(iconResId, null) }.isSuccess)
-                return buildModelForStandardMenuItem.invoke(delegate, id, titleId, iconResId)
+            if (buildModelForStandardMenuItem != null && runCatching { ctx.getString(titleId); ctx.resources.getDrawable(iconResId, null) }.isSuccess) {
+              runCatching { buildModelForStandardMenuItem.invoke(delegate, id, titleId, iconResId) }
+                  .onFailure { Log.ex(it, "[CX-MENU] native model failed; using fallback") }
+                  .getOrNull()?.let { return it }
+            }
+            val resources = runCatching { Resource.moduleResources(ctx) }.getOrNull()
+            val title = runCatching { resources?.getString(titleId) }.getOrNull() ?: when (titleId) {
+              R.string.main_menu_extension -> "Extensions"
+              R.string.main_menu_install_script -> "Install UserScript"
+              R.string.main_menu_developer_tools -> "Developer tools"
+              else -> "Eruda console"
+            }
+            val icon = runCatching { resources?.getDrawable(iconResId, null) }.getOrNull()
+                ?: android.content.res.Resources.getSystem().getDrawable(android.R.drawable.ic_menu_manage, null)
             // Any menu item already in the list knows the full key set of a menu item, which is all
             // PropertyModel needs to build an empty one of the same shape. Only the properties
             // buildModelForStandardMenuItem itself writes get filled in: CLICK_HANDLER and the
@@ -585,8 +599,8 @@ object PageMenuHook : BaseHook() {
               val value =
                   when (key.toString()) {
                     "MENU_ITEM_ID" -> id
-                    "TITLE" -> Resource.moduleResources(ctx).getString(titleId)
-                    "ICON" -> Resource.moduleResources(ctx).getDrawable(iconResId, null)
+                    "TITLE" -> title
+                    "ICON" -> icon
                     "ENABLED" -> true
                     "ICON_COLOR_RES",
                     "ICON_NO_TINT",

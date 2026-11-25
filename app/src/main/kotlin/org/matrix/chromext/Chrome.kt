@@ -378,13 +378,41 @@ object Resource {
   }
 
   fun moduleResources(ctx: Context): android.content.res.Resources {
-    val assets = android.content.res.AssetManager::class.java.getDeclaredConstructor().newInstance()
-    assets.invokeMethod(requireNotNull(module_path)) { name == "addAssetPath" }
-    return android.content.res.Resources(assets, ctx.resources.displayMetrics, ctx.resources.configuration)
+    return runCatching {
+      val assets = android.content.res.AssetManager::class.java.getDeclaredConstructor().newInstance()
+      val cookie = assets.invokeMethod(requireNotNull(module_path)) { name == "addAssetPath" }
+      check(cookie is Int && cookie != 0) { "Module asset path rejected" }
+      android.content.res.Resources(assets, ctx.resources.displayMetrics, ctx.resources.configuration).also {
+        it.getString(R.string.main_menu_extension)
+      }
+    }.getOrElse {
+      ctx.createPackageContext(BuildConfig.APPLICATION_ID, 0).resources
+    }
+  }
+
+  // Read immutable bundled assets from the actual loaded module, never host assets.
+  fun readAsset(name: String): String {
+    require(name.matches(Regex("[A-Za-z0-9_.-]+")))
+    return runCatching {
+      java.util.zip.ZipFile(requireNotNull(module_path)).use { apk ->
+        val entry = requireNotNull(apk.getEntry("assets/$name")) { "Missing module asset: $name" }
+        apk.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+      }
+    }.getOrElse { original ->
+      runCatching {
+        moduleResources(Chrome.getContext()).assets.open(name)
+            .bufferedReader(Charsets.UTF_8).use { it.readText() }
+      }.getOrElse {
+        it.addSuppressed(original)
+        throw java.io.IOException("Cannot read module asset $name", it)
+      }
+    }
   }
 
   fun enrich(ctx: Context) {
-    // Log.d("Enriching context for " + ctx.toString())
-    ctx.assets.invokeMethod(module_path!!) { name == "addAssetPath" }
+    runCatching {
+      val cookie = ctx.assets.invokeMethod(requireNotNull(module_path)) { name == "addAssetPath" }
+      check(cookie is Int && cookie != 0) { "Module asset path rejected by host" }
+    }.onFailure { Log.ex(it, "[CX-RES] legacy host resource merge unavailable") }
   }
 }

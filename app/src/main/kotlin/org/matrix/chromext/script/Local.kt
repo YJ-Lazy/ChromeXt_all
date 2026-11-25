@@ -14,16 +14,8 @@ import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.randomString
 
 object GM {
-  private val localScript: Map<String, String>
-
-  init {
-    val ctx = Chrome.getContext()
-    Resource.enrich(ctx)
-    localScript =
-        ctx.assets
-            .open("GM.js")
-            .bufferedReader()
-            .use { it.readText() }
+  private val localScript: Map<String, String> by lazy {
+        Resource.readAsset("GM.js")
             .split("// Kotlin separator\n\n")
             .associateBy(
                 {
@@ -89,7 +81,8 @@ object GM {
   }
 }
 
-object Local {
+// A failed asset read must not permanently poison the Kotlin singleton.
+private class LocalAssets {
 
   val promptInstallUserScript: String
   val customizeDevTool: String
@@ -113,31 +106,24 @@ object Local {
 
   init {
     val ctx = Chrome.getContext()
-    Resource.enrich(ctx)
     var css =
         JSONArray(
-            ctx.assets.open("editor.css").bufferedReader().use { it.readText() }.split("\n\n"))
+            Resource.readAsset("editor.css").split("\n\n"))
     promptInstallUserScript =
         "const _editor_style = ${css}[0];\n" +
-            ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
-    customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
+            Resource.readAsset("editor.js")
+    customizeDevTool = Resource.readAsset("devtools.js")
     css =
-        JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
+        JSONArray(Resource.readAsset("eruda.css").split("\n\n"))
     eruda =
         "eruda._styles = ${css};\n" +
-            ctx.assets
-                .open("eruda.js")
-                .bufferedReader()
-                .use { it.readText() }
+            Resource.readAsset("eruda.js")
                 .replaceFirst("Symbol.ChromeXt", "Symbol." + name)
                 .replaceFirst("ChromeXtUnlockKeyForEruda", key.toString())
-    encoding = ctx.assets.open("encoding.js").bufferedReader().use { it.readText() }
+    encoding = Resource.readAsset("encoding.js")
     eruda_version = getErudaVersion()
     val localScript =
-        ctx.assets
-            .open("scripts.js")
-            .bufferedReader()
-            .use { it.readText() }
+        Resource.readAsset("scripts.js")
             .split("// Kotlin separator\n\n")
 
     val seed = Random.nextDouble()
@@ -154,12 +140,17 @@ object Local {
     // only through the native evaluateJavascript result callback; no console bypass.
     initChromeXt = if (Chrome.packageName == "com.quark.browser") {
       originalInit
-          .replace("const initKey = ", "const quarkQueue = []; const initKey = ")
+          .replace("const initKey = ", "const quarkQueue = []; const quarkExecuted = new Set(); const initKey = ")
           .replace("this.#debug(backup.stringify({ action, payload, key: initKey }));",
               "if (quarkQueue.length < 256) quarkQueue.push(backup.stringify({ action, payload, key: initKey }));")
           .replace("    isLocked(throwError = false) {",
               """    quarkReady(token) { return token === initKey; }
     quarkDrain(token) { return token === initKey ? quarkQueue.splice(0, 64) : null; }
+    quarkClaim(token, id) {
+      if (token !== initKey || quarkExecuted.has(id)) return false;
+      quarkExecuted.add(id);
+      return true;
+    }
     isLocked(throwError = false) {""")
     } else originalInit
     openEruda =
@@ -185,4 +176,24 @@ object Local {
     }
     return null
   }
+}
+
+object Local {
+  private val state by lazy { LocalAssets() }
+  val promptInstallUserScript get() = state.promptInstallUserScript
+  val customizeDevTool get() = state.customizeDevTool
+  val eruda get() = state.eruda
+  val encoding get() = state.encoding
+  val initChromeXt get() = state.initChromeXt
+  val openEruda get() = state.openEruda
+  val cspRule get() = state.cspRule
+  val cosmeticFilter get() = state.cosmeticFilter
+  val key get() = state.key
+  val name get() = state.name
+  val anchorInChromeXt get() = state.anchorInChromeXt
+  var eruda_version: String?
+    get() = state.eruda_version
+    set(value) { state.eruda_version = value }
+  fun getErudaVersion(ctx: Context = Chrome.getContext(), versionText: String? = null): String? =
+      state.getErudaVersion(ctx, versionText)
 }

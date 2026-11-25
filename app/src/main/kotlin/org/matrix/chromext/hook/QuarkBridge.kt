@@ -129,7 +129,7 @@ object QuarkBridge {
         .onFailure { Log.ex(it, "[CX-INIT] preparation failed") }
   }
 
-  fun inject(view: Any, url: String, init: String, scripts: List<String>, trusted: Boolean) {
+  fun inject(view: Any, url: String, init: String, scripts: List<Pair<String, String>>, trusted: Boolean) {
     val page = pages[view] ?: return
     if (normalized(page.url) != normalized(url)) return
     val access = target(trusted)
@@ -152,10 +152,24 @@ object QuarkBridge {
       if (pages[view] !== page || !current(view, url)) return@evaluate
       val status = decode(raw)?.toString()
       Log.d("[CX-INIT] result=${status ?: "no callback"}; finished=${page.finished}")
-      if (status == "initialized") {
-        scripts.forEach { script ->
-          val guarded = "(function(){${urlGuard(url)}\n$script\n})();"
-          evaluate(view, guarded) { Log.d("[CX-INJECT] evaluation callback received=${it != null}") }
+      if (status == "initialized" || status == "ready") {
+        scripts.forEach { (id, script) ->
+          val guarded = """
+            (function(){
+              ${urlGuard(url)}
+              const bridge = $access;
+              if (!bridge || typeof bridge.quarkClaim !== 'function') return 'bridge-missing';
+              if (!bridge.quarkClaim($key, ${JSONObject.quote(id)})) return 'already-executed';
+              try {
+                $script
+                return 'executed';
+              } catch(e) { return 'error:' + (e && e.name || 'Error'); }
+            })();
+          """.trimIndent()
+          evaluate(view, guarded) { raw ->
+            if (pages[view] === page && current(view, url))
+              Log.d("[CX-INJECT] id=$id; result=${decode(raw)}")
+          }
         }
       }
       if ((status == "initialized" || status == "ready") && page.finished && !page.polling) {

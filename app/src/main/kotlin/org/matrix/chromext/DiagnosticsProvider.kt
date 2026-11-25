@@ -24,6 +24,7 @@ class DiagnosticsProvider : ContentProvider() {
     if (!allowedCaller()) throw SecurityException("Caller is not an allowed diagnostics client")
     val ctx = context ?: throw IllegalStateException("Provider has no context")
     return when (method) {
+      "sync_policy" -> ScriptPolicyProvider.syncPolicy(ctx, requireNotNull(callingPackage), extras)
       "append" -> {
         LogRecorder.writeLocal(
             ctx,

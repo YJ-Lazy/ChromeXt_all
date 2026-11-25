@@ -176,9 +176,12 @@ object ScriptDbManager {
 
     if (Chrome.packageName == "com.quark.browser" && webView != null && frameId == null) {
       val matched = if (runScripts) scripts.filter { it.id !in disabled && matching(it, url) } else emptyList()
-      val userCodes = mutableListOf<String>()
-      matched.forEach { GM.bootstrap(it, userCodes) }
       Log.d("[CX-MATCH] matched=${matched.size}; installed=${scripts.size}; trusted=$trustedPage")
+      val userCodes = matched.mapNotNull { script ->
+        runCatching { script.id to GM.bootstrap(script).joinToString("\n") }
+            .onFailure { Log.ex(it, "[CX-INJECT] bootstrap failed: ${script.id}") }
+            .getOrNull()
+      }
       QuarkBridge.inject(webView, url, initScript, userCodes, trustedPage)
       return
     }
@@ -201,7 +204,8 @@ object ScriptDbManager {
           .filter { it.id !in disabled && matching(it, url) && !(frameId != null && it.noframes) }
           .forEach {
             if (it.grant.contains("frames")) framesGranted = true
-            GM.bootstrap(it, codes)
+            runCatching { GM.bootstrap(it, codes) }
+                .onFailure { error -> Log.ex(error, "[CX-INJECT] bootstrap failed: ${it.id}") }
           }
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }

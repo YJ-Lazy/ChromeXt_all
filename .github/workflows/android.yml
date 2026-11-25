@@ -34,6 +34,25 @@ jobs:
           --class org.matrix.chromext.MainHook --method '<init>()V' \
           app/build/outputs/apk/release/app-release-unsigned.apk
 
+    - name: Verify bundled module assets
+      run: |
+        python3 - <<'PY'
+        import glob, zipfile
+        required = {"GM.js", "scripts.js", "editor.js", "editor.css", "devtools.js", "eruda.js", "eruda.css", "encoding.js", "xposed_init"}
+        apks = glob.glob("app/build/outputs/apk/*/*.apk")
+        assert apks, "No APK found"
+        for apk in apks:
+            with zipfile.ZipFile(apk) as z:
+                for name in required:
+                    assert z.getinfo("assets/" + name).file_size > 0, (apk, name)
+                gm = z.read("assets/GM.js").decode()
+                assert "GM.bootstrap" in gm and "globalThis" in gm
+                assert "Kotlin separator" in z.read("assets/scripts.js").decode()
+                print("Validated:", apk)
+        PY
+        "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/debug/app-debug.apk | grep -F 'org.matrix.chromext.diagnostics'
+        "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/debug/app-debug.apk | grep -F 'org.matrix.chromext.scriptpolicy'
+
     - name: Prepare debug APK
       id: prepare_debug
       run: mv app/build/outputs/apk/debug/app-debug.apk app/build/ChromeXt_debug.apk
