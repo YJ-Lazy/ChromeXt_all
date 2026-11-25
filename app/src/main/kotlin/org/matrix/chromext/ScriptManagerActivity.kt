@@ -488,6 +488,55 @@ class ScriptManagerActivity : Activity() {
         edit.apply(); refresh()
       }.show()
   }
+  private fun editScript(id:String) {
+    val original=prefs.getString("source:$id",null) ?: return
+    val pages=mutableListOf<String>()
+    var offset=0
+    while(offset<original.length) {
+      var end=minOf(offset+24000,original.length)
+      if(end<original.length && Character.isHighSurrogate(original[end-1])) end--
+      pages.add(original.substring(offset,end)); offset=end
+    }
+    if(pages.isEmpty()) pages.add("")
+    var page=0
+    val body=column().apply { setPadding(dp(16),dp(8),dp(16),dp(8)) }
+    val info=label("",12f)
+    body.addView(info)
+    val editor=EditText(this).apply {
+      textSize=12f; typeface=android.graphics.Typeface.MONOSPACE; setTextColor(ink)
+      background=panel(soft,12)
+      setPadding(dp(12),dp(12),dp(12),dp(12))
+      gravity=android.view.Gravity.TOP or android.view.Gravity.START
+      inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+      setHorizontallyScrolling(false)
+    }
+    body.addView(editor,LinearLayout.LayoutParams(-1,minOf(dp(380),resources.displayMetrics.heightPixels/2)))
+    fun render() { info.text="第 ${page+1} / ${pages.size} 页"; editor.setText(pages[page]); editor.setSelection(0) }
+    fun move(delta:Int) { val next=page+delta; if(next in pages.indices) { pages[page]=editor.text.toString(); page=next; render() } }
+    body.addView(LinearLayout(this).apply {
+      addView(action("上一页") { move(-1) },LinearLayout.LayoutParams(0,-2,1f))
+      addView(action("下一页") { move(1) },LinearLayout.LayoutParams(0,-2,1f))
+    })
+    render()
+    val dialog=AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("编辑脚本").setView(body)
+      .setNegativeButton("取消",null).setPositiveButton("保存",null).create()
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        pages[page]=editor.text.toString()
+        val source=pages.joinToString("")
+        if(backupId(source)!=id) {
+          Toast.makeText(this,"脚本无效、超出大小限制或标识已改变",Toast.LENGTH_LONG).show()
+        } else if(prefs.getString("source:$id",null)!=original) {
+          Toast.makeText(this,"脚本已发生变化，请重新打开编辑",Toast.LENGTH_LONG).show()
+        } else {
+          prefs.edit().putString("source:$id",source).putString("revision:$id",java.util.UUID.randomUUID().toString()).apply()
+          dialog.dismiss(); refresh()
+        }
+      }
+    }
+    dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    dialog.show()
+  }
   private fun swipeCard(id:String, content:View):View {
     val ctx=this
     val width=dp(88)
@@ -495,7 +544,7 @@ class ScriptManagerActivity : Activity() {
       var x=0f; var y=0f; var initial=0f; var dragging=false
       override fun onInterceptTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
-          0 -> { x=e.x; y=e.y; initial=content.translationX; dragging=false }
+          0 -> { x=e.x; y=e.y; content.animate().cancel(); initial=content.translationX; dragging=false }
           2 -> if(kotlin.math.abs(e.x-x)>dp(16) && kotlin.math.abs(e.x-x)>kotlin.math.abs(e.y-y)*1.5f) {
             dragging=true; parent.requestDisallowInterceptTouchEvent(true); return true
           }
@@ -504,14 +553,15 @@ class ScriptManagerActivity : Activity() {
       }
       override fun onTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
-          2 -> content.translationX=(initial+e.x-x).coerceIn(0f,width.toFloat())
-          1,3 -> { content.animate().translationX(if(content.translationX>width/2) width.toFloat() else 0f).setDuration(150).start(); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
+          2 -> content.translationX=(initial+e.x-x).coerceIn(-width.toFloat(),width.toFloat())
+          1,3 -> { content.animate().translationX(when { content.translationX>width/2 -> width.toFloat(); content.translationX< -width/2 -> -width.toFloat(); else -> 0f }).setDuration(150).start(); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
         }
         return true
       }
     }
     frame.layoutParams=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) }
     frame.addView(Button(this).apply { text="删除"; setTextColor(Color.WHITE); background=panel(0xFFC43C46.toInt(),12); setOnClickListener { deleteScript(id) } },FrameLayout.LayoutParams(width,-1,android.view.Gravity.START))
+    frame.addView(Button(this).apply { text="编辑"; setTextColor(Color.WHITE); background=panel(0xFF345DC5.toInt(),12); setOnClickListener { editScript(id) } },FrameLayout.LayoutParams(width,-1,android.view.Gravity.END))
     frame.addView(content,FrameLayout.LayoutParams(-1,-2))
     return frame
   }
