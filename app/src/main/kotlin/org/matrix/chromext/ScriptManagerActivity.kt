@@ -203,7 +203,7 @@ class ScriptManagerActivity : Activity() {
     dialog.show()
   }
   private fun backupId(source: String): String? {
-    if (source.toByteArray(Charsets.UTF_8).size > 180000) return null
+    if (source.toByteArray(Charsets.UTF_8).size > ScriptPolicyProvider.MAX_SOURCE) return null
     val header = Regex("""// ==UserScript==\r?\n([\s\S]*?)\r?\n// ==/UserScript==\s+""").find(source) ?: return null
     val fields = header.groupValues[1].lineSequence().mapNotNull {
       Regex("""^//\s+@([\w-]+)\s+(.+)""").matchEntire(it)?.let { m -> m.groupValues[1] to m.groupValues[2] }
@@ -336,7 +336,7 @@ class ScriptManagerActivity : Activity() {
                 while (true) {
                   val n = stream.read(buffer)
                   if (n < 0) break
-                  require(out.size()+n <= 180000) { "脚本超过当前同步大小限制" }
+                  require(out.size()+n <= ScriptPolicyProvider.MAX_SOURCE) { "脚本超过当前同步大小限制" }
                   out.write(buffer,0,n)
                 }
               }
