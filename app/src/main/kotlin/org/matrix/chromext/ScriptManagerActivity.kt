@@ -47,7 +47,7 @@ class ScriptManagerActivity : Activity() {
       setBackgroundColor(Color.parseColor(if (dark) "#151C29" else "#F1F4FA"))
       setPadding(dp(16),dp(12),dp(16),dp(12))
     }
-    root.addView(label("ChromeXt",28f,true))
+    root.addView(label("ScriptHub",28f,true))
     root.addView(label("统一脚本管理 · LSPosed"))
     summary = label("",15f,true)
     root.addView(card().apply { addView(summary); addView(label("配置将在下次页面注入时生效")) })
