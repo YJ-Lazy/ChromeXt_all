@@ -1,0 +1,36 @@
+name: Publish v4.1.0
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/publish-v4.1.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build APK
+        run: ./gradlew app:assembleDebug
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grep -q 'versionName = "4.1.0"' app/build.gradle.kts
+          cp app/build/outputs/apk/debug/app-debug.apk ScriptHub-v4.1.0.apk
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify ScriptHub-v4.1.0.apk
+          gh release create v4.1.0 ScriptHub-v4.1.0.apk --target "$GITHUB_SHA" --title "ScriptHub v4.1.0" --latest --notes-file - <<'NOTES'
+          ## 更新内容
+          - APP 更名为 ScriptHub
+          - 更新应用图标及 README
+          - 补充 APP 脚本下载网络权限
+          - 保留原有包名、脚本管理及浏览器适配
+          
+          本次发布 Debug 签名 APK。不同构建的签名可能不同，覆盖安装失败时请先备份数据。其他浏览器及新增导入功能仍需真机验证。
+          NOTES
