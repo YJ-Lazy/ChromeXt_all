@@ -424,7 +424,13 @@ class ScriptManagerActivity : Activity() {
     val name = field("name","sample").replace(":","")
     val id = field("namespace","ChromeXt")+":"+name
     if (prefs.contains("source:$id")) {
-      AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("脚本已存在").setMessage("当前同步机制不支持可靠覆盖更新，请管理已有脚本。").setPositiveButton("关闭",null).show(); return
+      AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("更新已有脚本")
+        .setMessage("覆盖源码为 "+field("version","未知版本")+"？保留浏览器分配及启用状态。")
+        .setNeutralButton("查看源码") { _,_ -> showSource("新源码",source) { previewImport(source) } }
+        .setNegativeButton("取消",null).setPositiveButton("确认更新") { _,_ ->
+          prefs.edit().putString("source:$id",source).putString("revision:$id",java.util.UUID.randomUUID().toString()).apply()
+          refresh()
+        }.show(); return
     }
     val targets = browsers()
     val selected = BooleanArray(targets.size)
@@ -437,7 +443,7 @@ class ScriptManagerActivity : Activity() {
         AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("分配浏览器（可稍后设置）")
           .setMultiChoiceItems(targets.map { browserName(it) }.toTypedArray(),selected) { _,i,checked -> selected[i]=checked }
           .setNegativeButton("取消",null).setPositiveButton("确认导入") { _,_ ->
-            val edit = prefs.edit().putString("source:$id",source)
+            val edit = prefs.edit().putString("source:$id",source).remove("deleted:$id").putString("revision:$id",java.util.UUID.randomUUID().toString())
             targets.forEachIndexed { i,pkg -> if (selected[i]) edit.putBoolean("assigned:$pkg:$id",true).putBoolean("enabled:$pkg:$id",true) }
             edit.apply()
             org.matrix.chromext.utils.LogRecorder.writeLocal(this,"INFO","[CX-IMPORT] saved script: $id")
@@ -473,6 +479,42 @@ class ScriptManagerActivity : Activity() {
     val counts=listOf(ids.size,browsers.size,ids.count { id -> browsers.any { enabled(it,id) } })
     stats.forEachIndexed { i,v -> v.text=counts[i].toString() }
   }
+  private fun deleteScript(id:String) {
+    AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("删除脚本")
+      .setMessage("从 ScriptHub 和已同步浏览器删除 "+id.substringAfterLast(':')+"？")
+      .setNegativeButton("取消",null).setPositiveButton("删除") { _,_ ->
+        val edit=prefs.edit().remove("source:$id").remove("revision:$id").putBoolean("deleted:$id",true)
+        for(key in prefs.all.keys) if((key.startsWith("assigned:") || key.startsWith("enabled:")) && key.substringAfter(':').substringAfter(':')==id) edit.remove(key)
+        edit.apply(); refresh()
+      }.show()
+  }
+  private fun swipeCard(id:String, content:View):View {
+    val ctx=this
+    val width=dp(88)
+    val frame=object:FrameLayout(ctx) {
+      var x=0f; var y=0f; var initial=0f; var dragging=false
+      override fun onInterceptTouchEvent(e:android.view.MotionEvent):Boolean {
+        when(e.actionMasked) {
+          0 -> { x=e.x; y=e.y; initial=content.translationX; dragging=false }
+          2 -> if(kotlin.math.abs(e.x-x)>dp(16) && kotlin.math.abs(e.x-x)>kotlin.math.abs(e.y-y)*1.5f) {
+            dragging=true; parent.requestDisallowInterceptTouchEvent(true); return true
+          }
+        }
+        return false
+      }
+      override fun onTouchEvent(e:android.view.MotionEvent):Boolean {
+        when(e.actionMasked) {
+          2 -> content.translationX=(initial+e.x-x).coerceIn(0f,width.toFloat())
+          1,3 -> { content.animate().translationX(if(content.translationX>width/2) width.toFloat() else 0f).setDuration(150).start(); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
+        }
+        return true
+      }
+    }
+    frame.layoutParams=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) }
+    frame.addView(Button(this).apply { text="删除"; setTextColor(Color.WHITE); background=panel(0xFFC43C46.toInt(),12); setOnClickListener { deleteScript(id) } },FrameLayout.LayoutParams(width,-1,android.view.Gravity.START))
+    frame.addView(content,FrameLayout.LayoutParams(-1,-2))
+    return frame
+  }
   private fun refresh() {
     if (!::list.isInitialized) return
     list.removeAllViews()
@@ -501,7 +543,7 @@ class ScriptManagerActivity : Activity() {
       for (id in ids.filter { it.contains(q,true) }) {
         val source = prefs.getString("source:$id","").orEmpty()
         val version = source.lineSequence().firstOrNull { it.trimStart().startsWith("// @version ") }?.substringAfter("@version")?.trim()
-        list.addView(card().apply {
+        list.addView(swipeCard(id,card().apply {
           addView(label(id.substringAfterLast(':'),19f,true))
           addView(label(id.substringBeforeLast(':') + (version?.let { " · v$it" } ?: "")))
           addView(View(this@ScriptManagerActivity).apply { setBackgroundColor(if(dark) 0x334F6380 else 0xFFE8EDF5.toInt()) },LinearLayout.LayoutParams(-1,dp(1)).apply { topMargin=dp(12); bottomMargin=dp(8) })
@@ -510,7 +552,7 @@ class ScriptManagerActivity : Activity() {
           addView(action("查看源码") {
             showSource(id.substringAfterLast(':'),source)
           })
-        })
+        }))
       }
     }
     if (list.childCount == 0) list.addView(card().apply { addView(label(if(q.isNotEmpty()) "没有匹配结果" else if(browserTab) "未发现浏览器" else "暂无脚本，点击导入脚本或在浏览器安装。",16f,true)) })
