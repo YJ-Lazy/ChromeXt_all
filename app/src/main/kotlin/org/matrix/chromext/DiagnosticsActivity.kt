@@ -124,7 +124,7 @@ class DiagnosticsActivity : Activity() {
   }
 
   private fun deleteLogs() {
-    android.app.AlertDialog.Builder(this)
+    android.app.AlertDialog.Builder(this,R.style.ScriptHubDialog)
       .setTitle("删除诊断日志")
       .setMessage("删除本模块保存的历史日志，新日志仍会继续显示。不会删除其他模块或系统日志；Root 增强读取仍可能显示原始历史记录。")
       .setNegativeButton("取消", null)
