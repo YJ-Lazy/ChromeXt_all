@@ -7,7 +7,20 @@
 
 **使用 LSPosed，模块 APP 无需单独授予 Root 权限。Root 仅用于可选的增强日志读取。**
 
-[下载 APK（Actions）](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml) · [问题反馈](https://github.com/YJ-Lazy/ChromeXt_all/issues) · [上游英文文档](README.upstream.md)
+[下载正式版 APK](https://github.com/YJ-Lazy/ChromeXt_all/releases/latest) · [构建产物（Actions）](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml) · [问题反馈](https://github.com/YJ-Lazy/ChromeXt_all/issues) · [上游英文文档](README.upstream.md)
+
+## v4.2 更新内容
+
+- 修复模块资源读取失败及 GM.js、Local 初始化异常，恢复用户脚本运行。
+- 修复跨进程脚本策略同步，保留按浏览器启停配置。
+- 优化 Chrome 菜单资源加载及异常回退。
+- 优化夸克 UC/U4 脚本注入时序，减少漏注入和重复执行。
+- 增加 Eruda 初始化结果及网页脚本管理器握手诊断。
+- 保留新版 UI、批量导入导出及独立模块日志。
+
+基于 4.1.3 修复代码，已收到真机脚本生效反馈。其他浏览器、完整 GM API、Eruda 和网页脚本管理器仍需进一步验证。
+
+本次发布 Debug 签名 APK。覆盖安装前建议备份脚本；若签名不同，可能无法直接覆盖安装。更新后请强制停止目标浏览器再打开。
 
 ## 主要功能
 
@@ -39,7 +52,7 @@
 ## 安装与使用
 
 1. 确保设备已安装并启用 LSPosed。
-2. 前往 [Android 构建](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml)，选择成功的构建并下载 APK 产物（可能需要登录 GitHub）。优先使用可安装的已签名 APK；未签名 APK 需自行签名。
+2. 前往 [Releases](https://github.com/YJ-Lazy/ChromeXt_all/releases/latest) 下载正式版 APK，或从 [Android 构建](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml) 获取测试产物（可能需要登录 GitHub）。未签名 APK 需自行签名。
 3. 安装模块，在 LSPosed 中启用并勾选需要使用的浏览器。
 4. 强制停止目标浏览器，再重新打开。
 5. 通过 浏览器菜单或夸克悬浮入口安装用户脚本。
