@@ -25,6 +25,7 @@ object QuarkBridge {
   private class Page(val url: String) {
     var finished = false
     var polling = false
+    var managerHandshake = false
   }
   private val pages = WeakHashMap<Any, Page>()
   private fun normalized(url: String?) = url?.substringBefore('#')
@@ -35,7 +36,7 @@ object QuarkBridge {
       url.startsWith("https://") || url.startsWith("http://") || url.startsWith("file://")
 
   private fun evaluate(view: Any, code: String, result: (String?) -> Unit) {
-    handler.post {
+    val task = Runnable {
       var completed = false
       fun finish(value: String?) {
         if (completed) return
@@ -73,6 +74,7 @@ object QuarkBridge {
         finish(null)
       }
     }
+    if (Looper.myLooper() == handler.looper) task.run() else handler.post(task)
   }
 
   private fun decode(raw: String?): Any? {
@@ -206,7 +208,14 @@ object QuarkBridge {
         for (index in 0 until minOf(batch.length(), 64)) {
           if (!current(view, page.url)) break
           val message = batch.optString(index)
-          if (message.isNotEmpty()) Listener.startAction(message, view, null, "local://ChromeXt/init")
+          if (message.isNotEmpty()) {
+            if (trusted && isChromeXtFrontEnd(page.url) &&
+                runCatching { JSONObject(message).optString("action") == "userscript" }.getOrDefault(false)) {
+              if (!page.managerHandshake) Log.i("[CX-MANAGER] frontend handshake received")
+              page.managerHandshake = true
+            }
+            Listener.startAction(message, view, null, "local://ChromeXt/init")
+          }
         }
       }
       handler.postDelayed({ poll(view, page, trusted) }, if (batch == null) 1500L else 350L)
@@ -287,6 +296,43 @@ object QuarkBridge {
                 }.show()
           }.show()
     }.onFailure { Log.ex(it, "[CX-DB] native manager failed") }
+  }
+
+  fun checkWebManager(view: View) {
+    handler.postDelayed({
+      val page = pages[view] ?: return@postDelayed
+      if (!isChromeXtFrontEnd(page.url) || !current(view, page.url)) return@postDelayed
+      if (!page.managerHandshake && view.isAttachedToWindow && view.isShown) {
+        Log.w("[CX-MANAGER] frontend handshake not observed; native manager available")
+        Log.toast(view.context, "网页管理器尚未连接，可使用悬浮菜单中的脚本管理")
+      }
+    }, 6000L)
+  }
+
+  fun loadEruda(view: Any, core: String, extension: String) {
+    val url = Chrome.getUrl(view) ?: return
+    val page = pages[view] ?: return
+    if (!current(view, url)) return
+    evaluate(view, core) {
+      if (pages[view] !== page || !current(view, url)) return@evaluate
+      val code = """
+        (function(){
+          ${urlGuard(url)}
+          try {
+            if (typeof eruda === 'undefined') return 'core-missing';
+            $extension
+            return eruda._isInit ? 'initialized' : 'not-initialized';
+          } catch(e) { return 'error:' + (e && e.name || 'Error'); }
+        })();
+      """.trimIndent()
+      evaluate(view, code) { raw ->
+        if (pages[view] !== page || !current(view, url)) return@evaluate
+        val status = decode(raw)?.toString()
+        Log.i("[CX-ERUDA] load result=${status ?: "no callback"}")
+        if (status != "initialized" && view is View)
+          Log.toast(view.context, "开发者控制台初始化失败，请查看模块日志")
+      }
+    }
   }
 
   fun openEruda(view: View) {

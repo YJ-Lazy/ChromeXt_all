@@ -100,6 +100,7 @@ object FloatingEntryHook : BaseHook() {
                   parameterTypes[0] == String::class.java
             }
             Log.i("Quark script manager loadUrl dispatched; result=$result")
+            QuarkBridge.checkWebManager(webView)
           }.onFailure {
             org.matrix.chromext.utils.Log.ex(it, "Unable to open ChromeXt script manager")
           }

@@ -412,7 +412,9 @@ object Listener {
                   FileReader(eruda).use { it.readText() } +
                       "\n//# sourceURL=${ERUD_URL}@${Local.eruda_version}/eruda.js")
           codes.add("{${Local.eruda}}\n//# sourceURL=local://ChromeXt/eruda")
-          Chrome.evaluateJavascript(codes, currentTab, frameId)
+          if (Chrome.packageName == "com.quark.browser" && currentTab != null) {
+            org.matrix.chromext.hook.QuarkBridge.loadEruda(currentTab, codes[0], codes[1])
+          } else Chrome.evaluateJavascript(codes, currentTab, frameId)
         } else {
           on("updateEruda", JSONObject().put("load", true).toString(), currentTab, auxObject, frameId)
         }
