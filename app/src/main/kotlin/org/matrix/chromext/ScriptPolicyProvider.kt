@@ -14,7 +14,8 @@ class ScriptPolicyProvider : ContentProvider() {
   override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
     val ctx = requireNotNull(context)
     val pkg = callingPackage ?: throw SecurityException("Missing caller")
-    val allowed = ctx.resources.getStringArray(R.array.xposedscope).toSet()
+    val allowed = ctx.resources.getStringArray(R.array.xposedscope).toSet() +
+        ctx.packageManager.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://example.com")).addCategory(android.content.Intent.CATEGORY_BROWSABLE), 0).map { it.activityInfo.packageName }
     if (pkg !in allowed || pkg !in ctx.packageManager.getPackagesForUid(Binder.getCallingUid()).orEmpty())
       throw SecurityException("Unsupported caller")
     if (method != "sync") throw SecurityException("Unsupported method")
