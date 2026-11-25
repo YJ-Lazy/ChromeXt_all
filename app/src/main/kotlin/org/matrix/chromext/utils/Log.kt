@@ -14,6 +14,7 @@ object Log {
   fun i(msg: String) {
     AndroidLog.i(TAG, msg)
     AndroidLog.i("CXDiagnostics", msg.substringBefore("?"))
+    LogRecorder.write("INFO", msg.substringBefore("?"))
     XposedBridge.log("ChromeXt logging: " + msg)
   }
 
@@ -26,22 +27,26 @@ object Log {
       }
     }
     AndroidLog.d("CXDiagnostics", msg.substringBefore("?"))
+    LogRecorder.write("DEBUG", msg.substringBefore("?"))
   }
 
   fun w(msg: String) {
     AndroidLog.w(TAG, msg)
     AndroidLog.w("CXDiagnostics", msg.substringBefore("?"))
+    LogRecorder.write("WARN", msg.substringBefore("?"))
   }
 
   fun e(msg: String) {
     AndroidLog.e(TAG, msg)
     AndroidLog.e("CXDiagnostics", msg.substringBefore("?"))
+    LogRecorder.write("ERROR", msg.substringBefore("?"))
     XposedBridge.log("ChromeXt error: " + msg)
   }
 
   fun ex(thr: Throwable, msg: String = "") {
     AndroidLog.e(TAG, msg, thr)
     AndroidLog.e("CXDiagnostics", msg, thr)
+    LogRecorder.write("ERROR", msg.substringBefore("?") + "\n" + AndroidLog.getStackTraceString(thr))
     XposedBridge.log("ChromeXt exception caught: [${msg}] " + AndroidLog.getStackTraceString(thr))
   }
 
