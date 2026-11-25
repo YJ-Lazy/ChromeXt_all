@@ -19,6 +19,9 @@ class ScriptManagerActivity : Activity() {
   private lateinit var search: EditText
   private val prefs by lazy { getSharedPreferences("script_policy", 0) }
   private var browserTab = false
+  private val navButtons = mutableListOf<Button>()
+  private val canvasColor get() = Color.parseColor(if(dark) "#101625" else "#F3F5FB")
+  private val soft get() = Color.parseColor(if(dark) "#263653" else "#E8EEFF")
   private val dark get() = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
   private val ink get() = Color.parseColor(if (dark) "#E8EAF2" else "#18243A")
   private val muted get() = Color.parseColor(if (dark) "#AAB4C8" else "#607087")
@@ -33,29 +36,46 @@ class ScriptManagerActivity : Activity() {
     if (strong) setTypeface(null, Typeface.BOLD)
   }
   private fun action(value: String, run: () -> Unit) = Button(this).apply {
-    text = value; isAllCaps = false; setTextColor(accent); setOnClickListener { run() }
+    text = value; isAllCaps = false; textSize = 14f; setTextColor(accent)
+    background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22345DC5),panel(soft,12),null)
+    minHeight = dp(44); minimumHeight = dp(44); setPadding(dp(12),dp(8),dp(12),dp(8))
+    layoutParams = LinearLayout.LayoutParams(-1,-2).apply { topMargin = dp(8); bottomMargin = dp(4) }
+    setOnClickListener { run() }
   }
   private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
   private fun card(): LinearLayout = column().apply {
-    background = panel(surface); setPadding(dp(16),dp(14),dp(16),dp(14))
+    background = panel(surface,20); setPadding(dp(18),dp(18),dp(18),dp(18))
     layoutParams = LinearLayout.LayoutParams(-1,-2).apply { bottomMargin = dp(12) }
   }
   override fun onCreate(state: Bundle?) {
     super.onCreate(state)
     actionBar?.hide()
     val root = column().apply {
-      setBackgroundColor(Color.parseColor(if (dark) "#151C29" else "#F1F4FA"))
+      setBackgroundColor(canvasColor)
       setPadding(dp(16),dp(12),dp(16),dp(12))
     }
-    root.addView(label("ScriptHub",28f,true))
-    root.addView(label("统一脚本管理 · LSPosed"))
+    window.statusBarColor = canvasColor
+    window.navigationBarColor = canvasColor
+    if(android.os.Build.VERSION.SDK_INT >= 30) {
+      val flags = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+      window.insetsController?.setSystemBarsAppearance(if(dark) 0 else flags,flags)
+    } else if(android.os.Build.VERSION.SDK_INT >= 26) {
+      window.decorView.systemUiVisibility = if(dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+    }
+    root.addView(LinearLayout(this).apply {
+      gravity = android.view.Gravity.CENTER_VERTICAL
+      addView(ImageView(this@ScriptManagerActivity).apply { setImageResource(R.mipmap.ic_launcher) },LinearLayout.LayoutParams(dp(48),dp(48)).apply { rightMargin=dp(12) })
+      addView(column().apply { addView(label("ScriptHub",27f,true)); addView(label("跨浏览器脚本管理",12f)) },LinearLayout.LayoutParams(0,-2,1f))
+      addView(label("v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) })
+    })
+    root.addView(View(this),LinearLayout.LayoutParams(1,dp(14)))
     summary = label("",15f,true)
-    root.addView(card().apply { addView(summary); addView(label("配置将在下次页面注入时生效")) })
-    search = EditText(this).apply { hint = "搜索脚本或浏览器"; setSingleLine(true); textSize = 15f; setTextColor(ink); setHintTextColor(muted) }
+    root.addView(card().apply { background=panel(soft,20); addView(label("脚本库概览",12f,true)); addView(summary); addView(label("配置将在下次页面注入时生效",12f)) })
+    search = EditText(this).apply { hint = "搜索脚本或浏览器"; setSingleLine(true); textSize = 15f; setTextColor(ink); setHintTextColor(muted); background=panel(surface,14); setPadding(dp(16),dp(12),dp(16),dp(12)); minHeight=dp(48) }
     root.addView(search)
     root.addView(LinearLayout(this).apply {
-      addView(action("导入脚本") { chooseImport() },LinearLayout.LayoutParams(0,-2,1f))
-      addView(action("导出脚本") { selectExport() },LinearLayout.LayoutParams(0,-2,1f))
+      addView(action("↓  导入脚本") { chooseImport() }.apply { setTextColor(Color.WHITE); background=panel(Color.parseColor("#345DC5"),14) },LinearLayout.LayoutParams(0,dp(48),1f).apply { rightMargin=dp(6); topMargin=dp(10); bottomMargin=dp(12) })
+      addView(action("↑  导出脚本") { selectExport() },LinearLayout.LayoutParams(0,dp(48),1f).apply { leftMargin=dp(6); topMargin=dp(10); bottomMargin=dp(12) })
     })
     search.addTextChangedListener(object : android.text.TextWatcher {
       override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -64,8 +84,8 @@ class ScriptManagerActivity : Activity() {
     })
     list = column()
     root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1,0,1f))
-    val nav = LinearLayout(this)
-    fun tab(name: String, run: () -> Unit) { nav.addView(action(name,run),LinearLayout.LayoutParams(0,-2,1f)) }
+    val nav = LinearLayout(this).apply { background=panel(surface,20); setPadding(dp(4),dp(6),dp(4),dp(6)) }
+    fun tab(name: String, run: () -> Unit) { val b=action(name,run); navButtons.add(b); nav.addView(b,LinearLayout.LayoutParams(0,dp(48),1f).apply { leftMargin=dp(2); rightMargin=dp(2) }) }
     tab("脚本") { browserTab = false; refresh() }
     tab("浏览器") { browserTab = true; refresh() }
     tab("日志") { startActivity(Intent(this,DiagnosticsActivity::class.java)) }
@@ -104,7 +124,7 @@ class ScriptManagerActivity : Activity() {
     if (items.isEmpty()) { Toast.makeText(this,"暂无可导出的脚本",Toast.LENGTH_SHORT).show(); return }
     val selected = BooleanArray(items.size)
     val dialog = AlertDialog.Builder(this).setTitle("选择导出脚本")
-      .setMultiChoiceItems(items.toTypedArray(),selected) { _,i,v -> selected[i]=v }
+      .setMultiChoiceItems(items.map { it.substringAfterLast(':') }.toTypedArray(),selected) { _,i,v -> selected[i]=v }
       .setNeutralButton("全选",null).setNegativeButton("取消",null)
       .setPositiveButton("导出",null).create()
     dialog.setOnShowListener {
@@ -334,7 +354,9 @@ class ScriptManagerActivity : Activity() {
     prefs.edit().putBoolean("assigned:$pkg:$id",checked).putBoolean("enabled:$pkg:$id",checked).apply()
   }
   private fun switchFor(pkg: String,id: String,title: String) = Switch(this).apply {
-    text = title; setTextColor(ink); isChecked = enabled(pkg,id)
+    text = title; textSize=14f; setTextColor(ink); minHeight=dp(48); isChecked = enabled(pkg,id)
+    thumbTintList=android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked),intArrayOf()),intArrayOf(accent,muted))
+    trackTintList=android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked),intArrayOf()),intArrayOf(0x667B9EFF,0x33607087))
     setOnCheckedChangeListener { _,checked -> toggle(pkg,id,checked); updateSummary() }
   }
   private fun ids() = prefs.all.keys.filter { it.startsWith("source:") }.map { it.removePrefix("source:") }.sorted()
@@ -345,13 +367,14 @@ class ScriptManagerActivity : Activity() {
   private fun refresh() {
     if (!::list.isInitialized) return
     list.removeAllViews()
+    navButtons.forEachIndexed { i,b -> val active=i==(if(browserTab) 1 else 0); b.background=panel(if(active) soft else surface,14); b.setTextColor(if(active) accent else muted) }
     val browsers = browsers(); val ids = ids()
     updateSummary()
     val q = search.text.toString().trim()
     if (browserTab) {
       for (pkg in browsers.filter { browserName(it).contains(q,true)||it.contains(q,true) }) {
         list.addView(card().apply {
-          addView(label(browserName(pkg),19f,true)); addView(label(pkg))
+          addView(LinearLayout(this@ScriptManagerActivity).apply { gravity=android.view.Gravity.CENTER_VERTICAL; addView(ImageView(this@ScriptManagerActivity).apply { runCatching { setImageDrawable(packageManager.getApplicationIcon(pkg)) } },LinearLayout.LayoutParams(dp(42),dp(42)).apply { rightMargin=dp(12) }); addView(column().apply { addView(label(browserName(pkg),19f,true)); addView(label(pkg,12f)) },LinearLayout.LayoutParams(0,-2,1f)) })
           addView(label(if (prefs.contains("inventory:$pkg")) "已同步过脚本清单" else "尚未同步 · 请检查 LSPosed 作用域"))
           packageManager.getLaunchIntentForPackage(pkg)?.let { launch -> addView(action("打开浏览器") { startActivity(launch) }) }
           for (id in ids) addView(switchFor(pkg,id,id.substringAfterLast(':')))
@@ -365,7 +388,8 @@ class ScriptManagerActivity : Activity() {
         list.addView(card().apply {
           addView(label(id.substringAfterLast(':'),19f,true))
           addView(label(id.substringBeforeLast(':') + (version?.let { " · v$it" } ?: "")))
-          addView(label("适用浏览器",14f,true))
+          addView(View(this@ScriptManagerActivity).apply { setBackgroundColor(if(dark) 0x334F6380 else 0xFFE8EDF5.toInt()) },LinearLayout.LayoutParams(-1,dp(1)).apply { topMargin=dp(12); bottomMargin=dp(8) })
+          addView(label("适用浏览器",12f,true))
           for (pkg in browsers) addView(switchFor(pkg,id,browserName(pkg)+if(installed(pkg,id)) " · 已安装" else " · 分配"))
           addView(action("查看源码") {
             val text = TextView(this@ScriptManagerActivity).apply { this.text = source; setTextIsSelectable(true); setPadding(dp(16),dp(12),dp(16),dp(12)) }
