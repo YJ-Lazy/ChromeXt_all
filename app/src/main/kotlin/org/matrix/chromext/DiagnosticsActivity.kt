@@ -43,7 +43,7 @@ class DiagnosticsActivity : Activity() {
     val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     actions.addView(actionButton("刷新") { refreshLogs() })
     actions.addView(actionButton("分享日志") { shareLogs() })
-    actions.addView(actionButton("清屏") { logText.text = "" })
+    actions.addView(actionButton("删除日志") { deleteLogs() })
     root.addView(actions)
     root.addView(actionButton("一键复制适配日志") {
       val report = "Android " + android.os.Build.VERSION.RELEASE + " / SDK " + android.os.Build.VERSION.SDK_INT +
@@ -83,8 +83,25 @@ class DiagnosticsActivity : Activity() {
     status.text = "正在读取 Root 日志…"
     Thread {
       val result = LogRecorder.read(this)
-      runOnUiThread { logText.text = result; status.text = "Root 读取结束" }
+      runOnUiThread { logText.text = result; status.text = if (result.isBlank()) "暂无新日志" else "Root 读取结束" }
     }.start()
+  }
+
+  private fun deleteLogs() {
+    android.app.AlertDialog.Builder(this)
+      .setTitle("删除诊断日志")
+      .setMessage("清除本模块已读取的历史日志，新日志仍会继续显示。不会删除其他模块或系统日志。")
+      .setNegativeButton("取消", null)
+      .setPositiveButton("删除") { _, _ ->
+        status.text = "正在清除历史日志…"
+        Thread {
+          val ok = LogRecorder.clear(this)
+          runOnUiThread {
+            if (ok) logText.text = ""
+            status.text = if (ok) "历史日志已清除" else "清除失败，请检查 Root 权限"
+          }
+        }.start()
+      }.show()
   }
 
   private fun shareLogs() {
