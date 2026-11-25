@@ -45,6 +45,13 @@ class DiagnosticsActivity : Activity() {
     actions.addView(actionButton("分享日志") { shareLogs() })
     actions.addView(actionButton("清屏") { logText.text = "" })
     root.addView(actions)
+    root.addView(actionButton("一键复制适配日志") {
+      val report = "Android " + android.os.Build.VERSION.RELEASE + " / SDK " + android.os.Build.VERSION.SDK_INT +
+          "\\nModule " + BuildConfig.VERSION_NAME + "\\n" + logText.text.toString()
+      val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+      clipboard.setPrimaryClip(android.content.ClipData.newPlainText("浏览器适配日志", report))
+      android.widget.Toast.makeText(this, "适配日志已复制", android.widget.Toast.LENGTH_SHORT).show()
+    })
 
     val scroll = ScrollView(this)
     logText = TextView(this).apply {
@@ -84,7 +91,7 @@ class DiagnosticsActivity : Activity() {
     startActivity(Intent.createChooser(
         Intent(Intent.ACTION_SEND).apply {
           type = "text/plain"
-          putExtra(Intent.EXTRA_SUBJECT, "ChromeXt 夸克诊断日志")
+          putExtra(Intent.EXTRA_SUBJECT, "ChromeXt 浏览器适配日志")
           putExtra(Intent.EXTRA_TEXT, logText.text.toString().takeLast(200000))
         },
         "分享诊断日志",
