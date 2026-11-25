@@ -36,15 +36,15 @@ class ScriptPolicyProvider : ContentProvider() {
       val offset = extras.getInt("offset")
       require(offset >= 0)
       return when(op) {
-        "has" -> Bundle().apply { putBoolean("exists",prefs.contains(key)) }
+        "has" -> Bundle().apply { putBoolean("exists",(prefs.contains(key) || prefs.getBoolean("deleted:$id",false))) }
         "read" -> {
-          require(prefs.getBoolean("assigned:$pkg:$id",false))
+          require(!prefs.getBoolean("deleted:$id",false) && (prefs.getBoolean("assigned:$pkg:$id",false) || (prefs.contains("revision:$id") && JSONArray(prefs.getString("inventory:$pkg","[]")).let { a -> (0 until a.length()).any { a.optString(it)==id } })))
           val source = requireNotNull(prefs.getString(key,null))
           require(offset <= source.length)
           Bundle().apply { putString("chunk",source.substring(offset,minOf(source.length,offset+CHUNK))); putInt("length",source.length) }
         }
         "write" -> {
-          if (!prefs.contains(key)) {
+          if (!prefs.contains(key) && !prefs.getBoolean("deleted:$id",false)) {
             val chunk = requireNotNull(extras.getString("chunk"))
             require(chunk.length <= CHUNK)
             val digest = java.security.MessageDigest.getInstance("SHA-256").digest((pkg+"\u0000"+id).toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -83,6 +83,9 @@ class ScriptPolicyProvider : ContentProvider() {
     edit.apply()
     val assigned = JSONObject()
     val assignedIds = JSONArray()
+    val removed = JSONArray()
+    val revisions = JSONObject()
+    val known = JSONObject(extras?.getString("revisions") ?: "{}")
     for ((key, value) in prefs.all) {
       if (!key.startsWith("assigned:$pkg:") || value != true) continue
       val id = key.removePrefix("assigned:$pkg:")
@@ -98,10 +101,13 @@ class ScriptPolicyProvider : ContentProvider() {
     }
     for (i in 0 until ids.length()) {
       val id = ids.getString(i)
+      if (prefs.getBoolean("deleted:$id",false)) { removed.put(id); disabled.put(id); continue }
+      val revision=prefs.getString("revision:$id",null)
+      if (revision!=null && extras?.getBoolean("chunked")==true && known.optString(id)!=revision) { assignedIds.put(id); revisions.put(id,revision) }
       if (!prefs.getBoolean("enabled:$pkg:$id", true)) disabled.put(id)
     }
     prefs.edit().putString("inventory:$pkg", ids.toString()).apply()
-    return Bundle().apply { putString("disabled", disabled.toString()); putString("assigned", assigned.toString()); putString("assignedIds", assignedIds.toString()) }
+    return Bundle().apply { putString("disabled", disabled.toString()); putString("assigned", assigned.toString()); putString("assignedIds", assignedIds.toString()); putString("removed",removed.toString()); putString("revisions",revisions.toString()) }
   }
   }
   override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
@@ -112,7 +118,7 @@ class ScriptPolicyProvider : ContentProvider() {
 }
 
 object ScriptPolicy {
-  fun disabled(scripts: List<org.matrix.chromext.script.Script>, accept: (String, String) -> Unit): Set<String> = runCatching {
+  fun disabled(scripts: List<org.matrix.chromext.script.Script>, remove: (String) -> Unit, accept: (String, String) -> Boolean): Set<String> = runCatching {
     val ids = scripts.map { it.id }
     val resolver = Chrome.getContext().contentResolver
     fun call(request: Bundle): Bundle = try {
@@ -139,8 +145,14 @@ object ScriptPolicy {
         }
       }.onFailure { org.matrix.chromext.utils.Log.ex(it,"[CX-SYNC] source upload failed") }
     }
-    val result=call(Bundle().apply { putString("ids",JSONArray(ids).toString()); putBoolean("chunked",true) })
+    val local=Chrome.getContext().getSharedPreferences("scripthub_revisions",0)
+    val known=JSONObject()
+    for(id in ids) local.getString(id,null)?.let { known.put(id,it) }
+    val result=call(Bundle().apply { putString("revisions",known.toString()); putString("ids",JSONArray(ids).toString()); putBoolean("chunked",true) })
     val assigned = JSONObject(requireNotNull(result.getString("assigned")))
+    val removed=JSONArray(result.getString("removed") ?: "[]")
+    for(i in 0 until removed.length()) { val id=removed.getString(i); remove(id); local.edit().remove(id).apply() }
+    val revisions=JSONObject(result.getString("revisions") ?: "{}")
     val pending = JSONArray(result.getString("assignedIds") ?: "[]")
     for(i in 0 until pending.length()) {
       val id=pending.getString(i)
@@ -154,7 +166,7 @@ object ScriptPolicy {
           require(chunk.isNotEmpty() && source.length+chunk.length<=length)
           source.append(chunk)
         } while(source.length<length)
-        accept(id,source.toString())
+        if(accept(id,source.toString()) && revisions.has(id)) local.edit().putString(id,revisions.getString(id)).apply()
       }.onFailure { org.matrix.chromext.utils.Log.ex(it,"[CX-SYNC] source download failed") }
     }
     val array = JSONArray(requireNotNull(result.getString("disabled")))
