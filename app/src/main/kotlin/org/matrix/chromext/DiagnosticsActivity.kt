@@ -34,7 +34,7 @@ class DiagnosticsActivity : Activity() {
       textSize = 22f
     })
     root.addView(TextView(this).apply {
-      text = "模块独立记录日志，无需 Root 授权。"
+      text = "默认读取模块日志；可选 Root 增强诊断。"
       textSize = 14f
     })
     status = TextView(this).apply { textSize = 13f }
@@ -45,6 +45,7 @@ class DiagnosticsActivity : Activity() {
     actions.addView(actionButton("分享日志") { shareLogs() })
     actions.addView(actionButton("删除日志") { deleteLogs() })
     root.addView(actions)
+    root.addView(actionButton("Root 增强读取") { refreshLogs(true) })
     root.addView(actionButton("一键复制适配日志") {
       val report = "Android " + android.os.Build.VERSION.RELEASE + " / SDK " + android.os.Build.VERSION.SDK_INT +
           "\nModule " + BuildConfig.VERSION_NAME + "\n" + logText.text.toString()
@@ -79,10 +80,10 @@ class DiagnosticsActivity : Activity() {
         setOnClickListener { action() }
       }
 
-  private fun refreshLogs() {
-    status.text = "正在读取模块日志…"
+  private fun refreshLogs(rootMode: Boolean = false) {
+    status.text = if (rootMode) "正在读取 Root 增强日志…" else "正在读取模块日志…"
     Thread {
-      val result = LogRecorder.read(this)
+      val result = if (rootMode) LogRecorder.readRoot(this) else LogRecorder.read(this)
       runOnUiThread { logText.text = result; status.text = if (result.isBlank()) "暂无新日志" else "读取完成" }
     }.start()
   }
@@ -90,7 +91,7 @@ class DiagnosticsActivity : Activity() {
   private fun deleteLogs() {
     android.app.AlertDialog.Builder(this)
       .setTitle("删除诊断日志")
-      .setMessage("删除本模块保存的历史日志，新日志仍会继续显示。不会删除其他模块或系统日志。")
+      .setMessage("删除本模块保存的历史日志，新日志仍会继续显示。不会删除其他模块或系统日志；Root 增强读取仍可能显示原始历史记录。")
       .setNegativeButton("取消", null)
       .setPositiveButton("删除") { _, _ ->
         status.text = "正在清除历史日志…"
