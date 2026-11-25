@@ -31,7 +31,12 @@ object WebViewHook : BaseHook() {
             if (Chrome.packageName == "com.quark.browser") {
               Log.d("UC/U4 evaluateJavascript requested (${code.length} chars)")
             }
-            webView.invokeMethod(code, null) { name == "evaluateJavascript" }
+            runCatching {
+              webView.invokeMethod(code, null) {
+                name == "evaluateJavascript" && parameterCount == 2 &&
+                    parameterTypes[0] == String::class.java
+              }
+            }.onFailure { Log.ex(it, "JavaScript evaluation dispatch failed") }
           }
     }
   }
