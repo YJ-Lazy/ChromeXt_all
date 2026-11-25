@@ -116,18 +116,18 @@ object PageMenuHook : BaseHook() {
         readerMode.activate()
         return true
       }
-      when (ctx.resources.getResourceName(id)) {
-        "org.matrix.chromext:id/extension_id" -> {
+      when (id) {
+        R.id.extension_id -> {
           Listener.on("extension")
         }
-        "org.matrix.chromext:id/install_script_id" -> {
+        R.id.install_script_id -> {
           val sandBoxed = shouldBypassSandbox(getUrl())
           Chrome.evaluateJavascript(listOf("Symbol.installScript(true);"), null, null, sandBoxed)
         }
-        "org.matrix.chromext:id/developer_tools_id" -> Listener.on("inspectPages")
-        "org.matrix.chromext:id/eruda_console_id" ->
+        R.id.developer_tools_id -> Listener.on("inspectPages")
+        R.id.eruda_console_id ->
             UserScriptProxy.evaluateJavascript(Local.openEruda)
-        "${ctx.packageName}:id/reload_menu_id" -> {
+        ctx.resources.getIdentifier("reload_menu_id", "id", ctx.packageName) -> {
           val tab = Chrome.getTab()
           if (tab != null && !UserScriptProxy.isLoading(tab))
               return Listener.on("userAgentSpoof", getUrl()) != null
@@ -555,7 +555,7 @@ object PageMenuHook : BaseHook() {
           }
 
           fun standardMenuItem(id: Int, titleId: Int, iconResId: Int): Any? {
-            if (buildModelForStandardMenuItem != null)
+            if (buildModelForStandardMenuItem != null && runCatching { ctx.getString(titleId); ctx.resources.getDrawable(iconResId, null) }.isSuccess)
                 return buildModelForStandardMenuItem.invoke(delegate, id, titleId, iconResId)
             // Any menu item already in the list knows the full key set of a menu item, which is all
             // PropertyModel needs to build an empty one of the same shape. Only the properties
@@ -585,8 +585,8 @@ object PageMenuHook : BaseHook() {
               val value =
                   when (key.toString()) {
                     "MENU_ITEM_ID" -> id
-                    "TITLE" -> ctx.getString(titleId)
-                    "ICON" -> ctx.resources.getDrawable(iconResId, null)
+                    "TITLE" -> Resource.moduleResources(ctx).getString(titleId)
+                    "ICON" -> Resource.moduleResources(ctx).getDrawable(iconResId, null)
                     "ENABLED" -> true
                     "ICON_COLOR_RES",
                     "ICON_NO_TINT",
