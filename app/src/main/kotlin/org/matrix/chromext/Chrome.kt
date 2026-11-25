@@ -377,6 +377,12 @@ object Resource {
     module_path = packagePath
   }
 
+  fun moduleResources(ctx: Context): android.content.res.Resources {
+    val assets = android.content.res.AssetManager::class.java.getDeclaredConstructor().newInstance()
+    assets.invokeMethod(requireNotNull(module_path)) { name == "addAssetPath" }
+    return android.content.res.Resources(assets, ctx.resources.displayMetrics, ctx.resources.configuration)
+  }
+
   fun enrich(ctx: Context) {
     // Log.d("Enriching context for " + ctx.toString())
     ctx.assets.invokeMethod(module_path!!) { name == "addAssetPath" }
