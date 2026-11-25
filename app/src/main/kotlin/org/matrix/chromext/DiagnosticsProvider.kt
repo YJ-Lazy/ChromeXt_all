@@ -14,7 +14,10 @@ class DiagnosticsProvider : ContentProvider() {
   private fun allowedCaller(): Boolean {
     val ctx = context ?: return false
     val packages = ctx.packageManager.getPackagesForUid(Binder.getCallingUid()).orEmpty()
-    return packages.any { it == "com.quark.browser" || it == ctx.packageName }
+    val pkg = callingPackage ?: return false
+    val allowed = ctx.resources.getStringArray(R.array.xposedscope).toSet() +
+      ctx.packageManager.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://example.com")).addCategory(android.content.Intent.CATEGORY_BROWSABLE),0).map { it.activityInfo.packageName }
+    return pkg in packages && (pkg in allowed || pkg == ctx.packageName)
   }
 
   override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
@@ -25,7 +28,7 @@ class DiagnosticsProvider : ContentProvider() {
         LogRecorder.writeLocal(
             ctx,
             extras?.getString("level") ?: "INFO",
-            extras?.getString("message") ?: "",
+            "[${callingPackage}] " + (extras?.getString("message") ?: ""),
         )
         Bundle.EMPTY
       }
