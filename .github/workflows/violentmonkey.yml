@@ -1,7 +1,7 @@
 name: Violentmonkey upstream validation
 on:
   push:
-    branches: [violentmonkey-port]
+    branches: [master, violentmonkey-port]
   workflow_dispatch:
 jobs:
   upstream:
