@@ -55,6 +55,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     Log.d(lpparam.processName + " started")
     if (lpparam.packageName == "org.matrix.chromext") return
     if (lpparam.packageName == "android" || lpparam.packageName == "com.android.systemui") return
+    runCatching {
+      Application::class.java.getDeclaredMethod("attach", Context::class.java).hookAfter {
+        LogRecorder.initialize(it.thisObject as Application)
+      }
+      AndroidAppHelper.currentApplication()?.let { LogRecorder.initialize(it) }
+    }.onFailure { Log.ex(it, "Diagnostic initialization failed") }
     Log.i("[CX-ADAPTER] package=${lpparam.packageName}; process=${lpparam.processName}; sdk=${android.os.Build.VERSION.SDK_INT}")
     val chromium = runCatching {
       lpparam.classLoader.loadClass("org.chromium.ui.base.WindowAndroid")
