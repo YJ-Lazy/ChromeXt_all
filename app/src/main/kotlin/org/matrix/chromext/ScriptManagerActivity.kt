@@ -53,7 +53,10 @@ class ScriptManagerActivity : Activity() {
     root.addView(card().apply { addView(summary); addView(label("配置将在下次页面注入时生效")) })
     search = EditText(this).apply { hint = "搜索脚本或浏览器"; setSingleLine(true); textSize = 15f; setTextColor(ink); setHintTextColor(muted) }
     root.addView(search)
-    root.addView(action("导入脚本") { importDialog() })
+    root.addView(LinearLayout(this).apply {
+      addView(action("导入脚本") { chooseImport() },LinearLayout.LayoutParams(0,-2,1f))
+      addView(action("导出脚本") { selectExport() },LinearLayout.LayoutParams(0,-2,1f))
+    })
     search.addTextChangedListener(object : android.text.TextWatcher {
       override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
       override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { refresh() }
@@ -80,6 +83,126 @@ class ScriptManagerActivity : Activity() {
     }
   }
   override fun onResume() { super.onResume(); refresh() }
+
+
+  private var exportData: String? = null
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    // Keep large backup contents out of the Activity state Binder transaction.
+    outState.putBoolean("exportPending", exportData != null)
+  }
+  private fun chooseImport() {
+    AlertDialog.Builder(this).setTitle("导入脚本")
+      .setItems(arrayOf("网址导入","本地文件（支持多选）")) { _,i ->
+        if (i == 0) importDialog() else startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+          addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true)
+        }, 701)
+      }.show()
+  }
+  private fun selectExport() {
+    val items = ids()
+    if (items.isEmpty()) { Toast.makeText(this,"暂无可导出的脚本",Toast.LENGTH_SHORT).show(); return }
+    val selected = BooleanArray(items.size)
+    val dialog = AlertDialog.Builder(this).setTitle("选择导出脚本")
+      .setMultiChoiceItems(items.toTypedArray(),selected) { _,i,v -> selected[i]=v }
+      .setNeutralButton("全选",null).setNegativeButton("取消",null)
+      .setPositiveButton("导出",null).create()
+    dialog.setOnShowListener {
+      dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+        val value = !selected.all { it }
+        selected.indices.forEach { selected[it]=value; dialog.listView.setItemChecked(it,value) }
+      }
+      dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val sources = items.filterIndexed { i,_ -> selected[i] }.mapNotNull { prefs.getString("source:$it",null) }
+        if (sources.isEmpty()) { Toast.makeText(this,"请选择脚本",Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+        val single = sources.size == 1
+        val data = if (single) sources.first() else org.json.JSONObject().put("format","ScriptHub-scripts-v1").put("scripts",JSONArray(sources)).toString()
+        if (data.toByteArray(Charsets.UTF_8).size > 16*1024*1024) { Toast.makeText(this,"备份过大，请分批导出",Toast.LENGTH_LONG).show(); return@setOnClickListener }
+        exportData = data
+        dialog.dismiss()
+        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+          addCategory(Intent.CATEGORY_OPENABLE); type = if(single) "application/javascript" else "application/json"
+          putExtra(Intent.EXTRA_TITLE,if(single) "script.user.js" else "ScriptHub-backup.json")
+        },702)
+      }
+    }
+    dialog.show()
+  }
+  private fun backupId(source: String): String? {
+    if (source.toByteArray(Charsets.UTF_8).size > 180000) return null
+    val header = Regex("""// ==UserScript==\r?\n([\s\S]*?)\r?\n// ==/UserScript==\s+""").find(source) ?: return null
+    val fields = header.groupValues[1].lineSequence().mapNotNull {
+      Regex("""^//\s+@([\w-]+)\s+(.+)""").matchEntire(it)?.let { m -> m.groupValues[1] to m.groupValues[2] }
+    }.toList()
+    if (fields.none { it.first == "match" || it.first == "include" }) return null
+    return (fields.lastOrNull { it.first == "namespace" }?.second ?: "ChromeXt")+":"+
+      (fields.lastOrNull { it.first == "name" }?.second ?: "sample").replace(":","")
+  }
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode,resultCode,data)
+    if (requestCode == 702) {
+      val payload = exportData; exportData = null
+      val uri = data?.data
+      if (resultCode != RESULT_OK || uri == null) return
+      if (payload == null) { Toast.makeText(this,"导出会话已失效，请重试",Toast.LENGTH_LONG).show(); return }
+      Thread {
+        val result = runCatching { requireNotNull(contentResolver.openOutputStream(uri,"wt")).use { it.write(payload.toByteArray(Charsets.UTF_8)) } }
+        runOnUiThread { Toast.makeText(this,if(result.isSuccess) "导出成功" else "导出失败",Toast.LENGTH_LONG).show() }
+      }.start()
+    }
+    if (requestCode != 701 || resultCode != RESULT_OK || data == null) return
+    val uris = mutableListOf<android.net.Uri>()
+    data.clipData?.let { clip -> for(i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+    data.data?.let { if(it !in uris) uris.add(it) }
+    Thread {
+      val candidates = linkedMapOf<String,String>()
+      var skipped = 0
+      var total = 0
+      for (uri in uris.take(200)) {
+        runCatching {
+          val bytes = requireNotNull(contentResolver.openInputStream(uri)).use { stream ->
+            val out = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192)
+            while(true) {
+              val n = stream.read(buffer); if(n < 0) break
+              require(total+n <= 16*1024*1024) { "备份大小超限" }
+              total += n; out.write(buffer,0,n)
+            }; out.toByteArray()
+          }
+          val raw = bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
+          val sources = if(raw.trimStart().startsWith("{")) {
+            val obj = org.json.JSONObject(raw)
+            require(obj.getString("format") == "ScriptHub-scripts-v1")
+            val array = obj.getJSONArray("scripts")
+            require(array.length() <= 5000)
+            (0 until array.length()).map { array.getString(it) }
+          } else listOf(raw)
+          for(source in sources) {
+            val id = backupId(source)
+            if(id == null || prefs.contains("source:$id") || candidates.containsKey(id)) skipped++
+            else candidates[id]=source
+          }
+        }.onFailure { skipped++ }
+      }
+      runOnUiThread {
+        if(isFinishing || isDestroyed) return@runOnUiThread
+        val items = candidates.keys.toList()
+        if(items.isEmpty()) { Toast.makeText(this,"没有可导入的新脚本，跳过 $skipped 项",Toast.LENGTH_LONG).show(); return@runOnUiThread }
+        val selected = BooleanArray(items.size) { true }
+        AlertDialog.Builder(this).setTitle("选择导入脚本（跳过 $skipped 项）")
+          .setMultiChoiceItems(items.toTypedArray(),selected) { _,i,v -> selected[i]=v }
+          .setNegativeButton("取消",null).setPositiveButton("导入（默认不启用）") { _,_ ->
+            val edit = prefs.edit(); var count = 0
+            items.forEachIndexed { i,id ->
+              if(selected[i] && !prefs.contains("source:$id")) { edit.putString("source:$id",candidates.getValue(id)); count++ }
+            }
+            edit.apply()
+            org.matrix.chromext.utils.LogRecorder.writeLocal(this,"INFO","[CX-IMPORT] local backup imported $count scripts")
+            browserTab=false; search.setText(""); refresh()
+            Toast.makeText(this,"已导入 $count 个脚本，请选择适用浏览器",Toast.LENGTH_LONG).show()
+          }.show()
+      }
+    }.start()
+  }
 
   private fun importDialog() {
     val input = EditText(this).apply { hint = "脚本链接或目标网站"; setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
