@@ -34,7 +34,7 @@ class DiagnosticsActivity : Activity() {
       textSize = 22f
     })
     root.addView(TextView(this).apply {
-      text = "通过 Root 读取 ChromeXt Logcat 与 LSPosed 日志。"
+      text = "模块独立记录日志，无需 Root 授权。"
       textSize = 14f
     })
     status = TextView(this).apply { textSize = 13f }
@@ -47,7 +47,7 @@ class DiagnosticsActivity : Activity() {
     root.addView(actions)
     root.addView(actionButton("一键复制适配日志") {
       val report = "Android " + android.os.Build.VERSION.RELEASE + " / SDK " + android.os.Build.VERSION.SDK_INT +
-          "\\nModule " + BuildConfig.VERSION_NAME + "\\n" + logText.text.toString()
+          "\nModule " + BuildConfig.VERSION_NAME + "\n" + logText.text.toString()
       val clipboard = getSystemService(android.content.ClipboardManager::class.java)
       clipboard.setPrimaryClip(android.content.ClipData.newPlainText("浏览器适配日志", report))
       android.widget.Toast.makeText(this, "适配日志已复制", android.widget.Toast.LENGTH_SHORT).show()
@@ -80,17 +80,17 @@ class DiagnosticsActivity : Activity() {
       }
 
   private fun refreshLogs() {
-    status.text = "正在读取 Root 日志…"
+    status.text = "正在读取模块日志…"
     Thread {
       val result = LogRecorder.read(this)
-      runOnUiThread { logText.text = result; status.text = if (result.isBlank()) "暂无新日志" else "Root 读取结束" }
+      runOnUiThread { logText.text = result; status.text = if (result.isBlank()) "暂无新日志" else "读取完成" }
     }.start()
   }
 
   private fun deleteLogs() {
     android.app.AlertDialog.Builder(this)
       .setTitle("删除诊断日志")
-      .setMessage("清除本模块已读取的历史日志，新日志仍会继续显示。不会删除其他模块或系统日志。")
+      .setMessage("删除本模块保存的历史日志，新日志仍会继续显示。不会删除其他模块或系统日志。")
       .setNegativeButton("取消", null)
       .setPositiveButton("删除") { _, _ ->
         status.text = "正在清除历史日志…"
@@ -98,7 +98,7 @@ class DiagnosticsActivity : Activity() {
           val ok = LogRecorder.clear(this)
           runOnUiThread {
             if (ok) logText.text = ""
-            status.text = if (ok) "历史日志已清除" else "清除失败，请检查 Root 权限"
+            status.text = if (ok) "历史日志已清除" else "清除失败，请重试"
           }
         }.start()
       }.show()
