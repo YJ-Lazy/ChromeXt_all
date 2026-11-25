@@ -566,11 +566,11 @@ class ScriptManagerActivity : Activity() {
     val right=gesturePrefs.getString("swipe_right","delete") ?: "delete"
     if(left=="none" && right=="none") return content
     val frame=object:FrameLayout(ctx) {
-      var x=0f; var y=0f; var initial=0f; var dragging=false
+      var touchStartX=0f; var touchStartY=0f; var initial=0f; var dragging=false
       override fun onInterceptTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
-          0 -> { x=e.x; y=e.y; content.animate().cancel(); initial=content.translationX; dragging=false }
-          2 -> if((initial!=0f || (e.x>x && right!="none") || (e.x<x && left!="none")) && kotlin.math.abs(e.x-x)>dp(16) && kotlin.math.abs(e.x-x)>kotlin.math.abs(e.y-y)*1.5f) {
+          0 -> { touchStartX=e.x; touchStartY=e.y; content.animate().cancel(); initial=content.translationX; dragging=false }
+          2 -> if((initial!=0f || (e.x>touchStartX && right!="none") || (e.x<touchStartX && left!="none")) && kotlin.math.abs(e.x-touchStartX)>dp(16) && kotlin.math.abs(e.x-touchStartX)>kotlin.math.abs(e.y-touchStartY)*1.5f) {
             dragging=true; parent.requestDisallowInterceptTouchEvent(true); return true
           }
         }
@@ -578,7 +578,7 @@ class ScriptManagerActivity : Activity() {
       }
       override fun onTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
-          2 -> content.translationX=(initial+e.x-x).coerceIn(if(left=="none") 0f else -width.toFloat(),if(right=="none") 0f else width.toFloat())
+          2 -> content.translationX=(initial+e.x-touchStartX).coerceIn(if(left=="none") 0f else -width.toFloat(),if(right=="none") 0f else width.toFloat())
           1,3 -> { content.animate().translationX(when { content.translationX>width/2 -> width.toFloat(); content.translationX< -width/2 -> -width.toFloat(); else -> 0f }).setDuration(150).start(); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
         }
         return true
