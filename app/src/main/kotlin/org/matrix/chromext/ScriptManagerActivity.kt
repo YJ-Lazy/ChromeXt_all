@@ -565,6 +565,13 @@ class ScriptManagerActivity : Activity() {
     val left=gesturePrefs.getString("swipe_left","edit") ?: "edit"
     val right=gesturePrefs.getString("swipe_right","delete") ?: "delete"
     if(left=="none" && right=="none") return content
+    var rightAction:View?=null
+    var leftAction:View?=null
+    fun reveal(value:Float) {
+      content.translationX=value
+      rightAction?.visibility=if(value>0f) View.VISIBLE else View.INVISIBLE
+      leftAction?.visibility=if(value<0f) View.VISIBLE else View.INVISIBLE
+    }
     val frame=object:FrameLayout(ctx) {
       var touchStartX=0f; var touchStartY=0f; var initial=0f; var dragging=false
       override fun onInterceptTouchEvent(e:android.view.MotionEvent):Boolean {
@@ -578,8 +585,8 @@ class ScriptManagerActivity : Activity() {
       }
       override fun onTouchEvent(e:android.view.MotionEvent):Boolean {
         when(e.actionMasked) {
-          2 -> content.translationX=(initial+e.x-touchStartX).coerceIn(if(left=="none") 0f else -width.toFloat(),if(right=="none") 0f else width.toFloat())
-          1,3 -> { content.animate().translationX(when { content.translationX>width/2 -> width.toFloat(); content.translationX< -width/2 -> -width.toFloat(); else -> 0f }).setDuration(150).start(); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
+          2 -> reveal((initial+e.x-touchStartX).coerceIn(if(left=="none") 0f else -width.toFloat(),if(right=="none") 0f else width.toFloat()))
+          1,3 -> { reveal(if(e.actionMasked==3) 0f else when { content.translationX>width/2 -> width.toFloat(); content.translationX< -width/2 -> -width.toFloat(); else -> 0f }); parent.requestDisallowInterceptTouchEvent(false); dragging=false }
         }
         return true
       }
@@ -587,16 +594,22 @@ class ScriptManagerActivity : Activity() {
     frame.layoutParams=LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) }
     fun addGesture(kind:String,gravity:Int) {
       if(kind=="none") return
-      frame.addView(Button(this).apply {
+      val button=Button(this).apply {
+        visibility=View.INVISIBLE; stateListAnimator=null; elevation=0f; translationZ=0f
         text=if(kind=="delete") "删除" else "编辑"
         setTextColor(Color.WHITE)
         background=panel(if(kind=="delete") 0xFFC43C46.toInt() else 0xFF345DC5.toInt(),12)
         setOnClickListener { if(kind=="delete") deleteScript(id) else editScript(id) }
-      },FrameLayout.LayoutParams(width,-1,gravity))
+      }
+      frame.addView(button,FrameLayout.LayoutParams(width,-1,gravity))
+      if(gravity==android.view.Gravity.LEFT) rightAction=button else leftAction=button
     }
     addGesture(right,android.view.Gravity.LEFT)
     addGesture(left,android.view.Gravity.RIGHT)
+    content.elevation=dp(1).toFloat(); content.translationZ=0f
+    frame.clipChildren=true
     frame.addView(content,FrameLayout.LayoutParams(-1,-2))
+    reveal(0f)
     return frame
   }
   private fun refresh() {
