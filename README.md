@@ -1,13 +1,13 @@
-# ChromeXt · Android 浏览器脚本增强
+# ScriptHub · Android 浏览器脚本增强
 
-[![Android CI](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml/badge.svg?branch=master)](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml)
+[![Android CI](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml/badge.svg?branch=master)](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml)
 ![LSPosed](https://img.shields.io/badge/Hook-LSPosed-blue)
 
 基于 [ChromeXt](https://github.com/JingMatrix/ChromeXt) 开发的 Android 浏览器用户脚本增强模块，支持夸克 UC/U4 内核及 Chromium 浏览器，并提供独立的脚本管理 APP。
 
 **使用 LSPosed，模块 APP 无需单独授予 Root 权限。Root 仅用于可选的增强日志读取。**
 
-[下载 APK（Actions）](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml) · [问题反馈](https://github.com/YJ-Lazy/ChromeXt_kuake/issues) · [上游英文文档](README.upstream.md)
+[下载 APK（Actions）](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml) · [问题反馈](https://github.com/YJ-Lazy/ChromeXt_all/issues) · [上游英文文档](README.upstream.md)
 
 ## 主要功能
 
@@ -39,11 +39,11 @@
 ## 安装与使用
 
 1. 确保设备已安装并启用 LSPosed。
-2. 前往 [Android 构建](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml)，选择成功的构建并下载 APK 产物（可能需要登录 GitHub）。优先使用可安装的已签名 APK；未签名 APK 需自行签名。
+2. 前往 [Android 构建](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml)，选择成功的构建并下载 APK 产物（可能需要登录 GitHub）。优先使用可安装的已签名 APK；未签名 APK 需自行签名。
 3. 安装模块，在 LSPosed 中启用并勾选需要使用的浏览器。
 4. 强制停止目标浏览器，再重新打开。
 5. 通过 浏览器菜单或夸克悬浮入口安装用户脚本。
-6. 打开 ChromeXt APP 管理脚本及浏览器配置，重新加载网页使配置生效。
+6. 打开 ScriptHub APP 管理脚本及浏览器配置，重新加载网页使配置生效。
 
 无需为系统或 System UI 启用模块。本项目不承诺支持免 Root 框架或内嵌 APK 方案。
 
@@ -71,7 +71,7 @@
 
 独立日志通信已收到 Chrome 真机成功反馈；拒绝 Root 后的完整回归及 Root 增强读取仍需进一步确认。若独立日志为空，请检查作用域、重启浏览器，必要时使用 Root 增强读取或从 LSPosed 管理器导出日志。
 
-提交 [Issue](https://github.com/YJ-Lazy/ChromeXt_kuake/issues) 时请附上浏览器名称及版本、Android 和 LSPosed 版本、复现步骤及适配日志。分享前请移除敏感网址和个人信息。
+提交 [Issue](https://github.com/YJ-Lazy/ChromeXt_all/issues) 时请附上浏览器名称及版本、Android 和 LSPosed 版本、复现步骤及适配日志。分享前请移除敏感网址和个人信息。
 
 ## 开发与构建
 
@@ -82,7 +82,7 @@
 ./gradlew app:assembleRelease
 ```
 
-Windows 使用 `gradlew.bat`。构建及产物以 [GitHub Actions](https://github.com/YJ-Lazy/ChromeXt_kuake/actions) 为准。
+Windows 使用 `gradlew.bat`。构建及产物以 [GitHub Actions](https://github.com/YJ-Lazy/ChromeXt_all/actions) 为准。
 
 当前脚本运行引擎仍为 ChromeXt；Violentmonkey 上游构建验证属于迁移研究，并非已完成 Android 运行时移植。
 
