@@ -356,6 +356,61 @@ class ScriptManagerActivity : Activity() {
       }
     }.start()
   }
+
+  private fun showSource(title: String, source: String, back: (() -> Unit)? = null) {
+    val pageSize=24000
+    val pages=mutableListOf<Int>(0)
+    while(pages.last()<source.length) {
+      var end=minOf(pages.last()+pageSize,source.length)
+      if(end<source.length && Character.isHighSurrogate(source[end-1])) end--
+      pages.add(end)
+    }
+    if(pages.size==1) pages.add(0)
+    var page=0
+    val body=column().apply { setPadding(dp(16),dp(8),dp(16),dp(12)) }
+    val info=label("",12f)
+    body.addView(info)
+    val editor=EditText(this).apply {
+      setTextColor(ink); textSize=12f; typeface=Typeface.MONOSPACE
+      background=panel(soft,12); setPadding(dp(12),dp(12),dp(12),dp(12))
+      gravity=android.view.Gravity.TOP or android.view.Gravity.START
+      inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+      keyListener=null; setTextIsSelectable(true); isFocusable=true; isFocusableInTouchMode=true
+      showSoftInputOnFocus=false; isCursorVisible=false
+      setHorizontallyScrolling(false)
+    }
+    body.addView(editor,LinearLayout.LayoutParams(-1, minOf(dp(420),resources.displayMetrics.heightPixels/2)))
+    fun copy(value:String) {
+      if(value.toByteArray(Charsets.UTF_8).size>256*1024) {
+        Toast.makeText(this,"源码过大，请使用导出脚本保存完整文件",Toast.LENGTH_LONG).show(); return
+      }
+      runCatching {
+        getSystemService(android.content.ClipboardManager::class.java)
+          .setPrimaryClip(android.content.ClipData.newPlainText("脚本源码",value))
+      }.onSuccess { Toast.makeText(this,"已复制",Toast.LENGTH_SHORT).show() }
+       .onFailure { Toast.makeText(this,"复制失败，请使用导出脚本",Toast.LENGTH_LONG).show() }
+    }
+    fun render() {
+      editor.setText(source.substring(pages[page],pages[page+1]))
+      editor.scrollTo(0,0)
+      info.text="第 ${page+1} / ${pages.size-1} 页 · 长按选择文本"
+    }
+    body.addView(LinearLayout(this).apply {
+      addView(action("上一页") { if(page>0) { page--; render() } },LinearLayout.LayoutParams(0,-2,1f))
+      addView(action("下一页") { if(page<pages.size-2) { page++; render() } },LinearLayout.LayoutParams(0,-2,1f))
+    })
+    body.addView(action("复制选中内容") {
+      val a=editor.selectionStart; val b=editor.selectionEnd
+      if(a>=0 && b>=0 && a!=b) copy(editor.text.substring(minOf(a,b),maxOf(a,b)))
+      else Toast.makeText(this,"请先长按选择文本",Toast.LENGTH_SHORT).show()
+    })
+    body.addView(action("复制全部") { copy(source) })
+    render()
+    AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle(title).setView(body)
+      .setPositiveButton(if(back==null) "关闭" else "返回") { _,_ -> back?.invoke() }
+      .show().window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+  }
+
   private fun previewImport(source: String) {
     val header = Regex("""// ==UserScript==\r?\n([\s\S]*?)\r?\n// ==/UserScript==\s+""").find(source)
     val metadata = header?.groupValues?.get(1)?.lineSequence()?.mapNotNull {
@@ -377,8 +432,7 @@ class ScriptManagerActivity : Activity() {
     AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle(name+" · "+field("version","未知版本"))
       .setMessage("匹配规则：\n"+matches.joinToString("\n")+"\n\n声明权限：\n"+grants.ifBlank { "无" }+"\n\n仅导入可信脚本。")
       .setNeutralButton("查看源码") { _,_ ->
-        val view = TextView(this).apply { text = source; setTextIsSelectable(true) }
-        AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("脚本源码").setView(ScrollView(this).apply { addView(view) }).setPositiveButton("返回") { _,_ -> previewImport(source) }.show()
+        showSource("脚本源码",source) { previewImport(source) }
       }.setNegativeButton("取消",null).setPositiveButton("选择浏览器") { _,_ ->
         AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("分配浏览器（可稍后设置）")
           .setMultiChoiceItems(targets.map { browserName(it) }.toTypedArray(),selected) { _,i,checked -> selected[i]=checked }
@@ -454,8 +508,7 @@ class ScriptManagerActivity : Activity() {
           addView(label("适用浏览器",12f,true))
           for (pkg in browsers) addView(switchFor(pkg,id,browserName(pkg)+if(installed(pkg,id)) " · 已安装" else " · 分配"))
           addView(action("查看源码") {
-            val text = TextView(this@ScriptManagerActivity).apply { this.text = source; setTextIsSelectable(true); setPadding(dp(16),dp(12),dp(16),dp(12)) }
-            AlertDialog.Builder(this@ScriptManagerActivity).setTitle(id.substringAfterLast(':')).setView(ScrollView(this@ScriptManagerActivity).apply { addView(text) }).setPositiveButton("关闭",null).show()
+            showSource(id.substringAfterLast(':'),source)
           })
         })
       }
