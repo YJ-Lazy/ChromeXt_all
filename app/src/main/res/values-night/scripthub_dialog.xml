@@ -1,0 +1,10 @@
+<resources>
+    <style name="ScriptHubDialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#9BB8FF</item>
+        <item name="android:colorBackground">#222B3C</item>
+        <item name="android:colorControlNormal">#AAB4C8</item>
+        <item name="android:textColorPrimary">#E8EAF2</item>
+        <item name="android:textColorSecondary">#AAB4C8</item>
+        <item name="android:windowBackground">@drawable/scripthub_dialog_background</item>
+    </style>
+</resources>
