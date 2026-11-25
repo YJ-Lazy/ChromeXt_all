@@ -112,6 +112,8 @@ object ScriptDbManager {
   }
 
   fun invokeScript(url: String, webView: Any? = null, frameId: String? = null) {
+    val disabled = org.matrix.chromext.ScriptPolicy.disabled(scripts.map { it.id })
+    Log.d("[CX-POLICY] installed=${scripts.size}; disabled=${disabled.size}")
     val codes = mutableListOf<String>(Local.initChromeXt)
     val path = resolveContentUrl(url)
     val webSettings = webView?.invokeMethod { name == "getSettings" }
@@ -166,7 +168,7 @@ object ScriptDbManager {
     val initScript = codes.joinToString("\n")
 
     if (Chrome.packageName == "com.quark.browser" && webView != null && frameId == null) {
-      val matched = if (runScripts) scripts.filter { matching(it, url) } else emptyList()
+      val matched = if (runScripts) scripts.filter { it.id !in disabled && matching(it, url) } else emptyList()
       val userCodes = mutableListOf<String>()
       matched.forEach { GM.bootstrap(it, userCodes) }
       Log.d("[CX-MATCH] matched=${matched.size}; installed=${scripts.size}; trusted=$trustedPage")
@@ -189,7 +191,7 @@ object ScriptDbManager {
     if (asyncEvaluation) codes.add(initScript)
     if (runScripts) {
       scripts
-          .filter { matching(it, url) && !(frameId != null && it.noframes) }
+          .filter { it.id !in disabled && matching(it, url) && !(frameId != null && it.noframes) }
           .forEach {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
