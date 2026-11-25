@@ -22,12 +22,29 @@ class ScriptPolicyProvider : ContentProvider() {
     val ids = JSONArray(extras?.getString("ids") ?: "[]")
     require(ids.length() <= 5000)
     val disabled = JSONArray()
+    val incoming = JSONObject(extras?.getString("sources") ?: "{}")
+    val edit = prefs.edit()
+    for (id in incoming.keys()) {
+      val source = incoming.getString(id)
+      if (source.length <= 200000 && !prefs.contains("source:$id")) {
+        edit.putString("source:$id", source)
+      }
+    }
+    edit.apply()
+    val assigned = JSONObject()
+    for ((key, value) in prefs.all) {
+      if (!key.startsWith("assigned:$pkg:") || value != true) continue
+      val id = key.removePrefix("assigned:$pkg:")
+      if ((0 until ids.length()).any { ids.getString(it) == id }) continue
+      val source = prefs.getString("source:$id", null) ?: continue
+      if (assigned.toString().length + source.length < 200000) assigned.put(id, source)
+    }
     for (i in 0 until ids.length()) {
       val id = ids.getString(i)
       if (!prefs.getBoolean("enabled:$pkg:$id", true)) disabled.put(id)
     }
     prefs.edit().putString("inventory:$pkg", ids.toString()).apply()
-    return Bundle().apply { putString("disabled", disabled.toString()) }
+    return Bundle().apply { putString("disabled", disabled.toString()); putString("assigned", assigned.toString()) }
   }
   override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
   override fun getType(uri: Uri): String? = null
@@ -37,12 +54,20 @@ class ScriptPolicyProvider : ContentProvider() {
 }
 
 object ScriptPolicy {
-  fun disabled(ids: List<String>): Set<String> = runCatching {
+  fun disabled(scripts: List<org.matrix.chromext.script.Script>, accept: (String, String) -> Unit): Set<String> = runCatching {
+    val ids = scripts.map { it.id }
+    val sources = JSONObject()
+    for (script in scripts) {
+      val source = script.meta + script.code
+      if (sources.toString().length + source.length < 200000) sources.put(script.id, source)
+    }
     val result = Chrome.getContext().contentResolver.call(
       Uri.parse("content://org.matrix.chromext.scriptpolicy"), "sync", null,
-      Bundle().apply { putString("ids", JSONArray(ids).toString()) })
+      Bundle().apply { putString("ids", JSONArray(ids).toString()); putString("sources", sources.toString()) })
+    val assigned = JSONObject(requireNotNull(result?.getString("assigned")))
+    for (id in assigned.keys()) accept(id, assigned.getString(id))
     val array = JSONArray(requireNotNull(result?.getString("disabled")))
     (0 until array.length()).map { array.getString(it) }.toSet()
   }.onFailure { org.matrix.chromext.utils.Log.ex(it, "[CX-POLICY] sync failed; blocking scripts") }
-    .getOrElse { ids.toSet() }
+    .getOrElse { scripts.map { it.id }.toSet() }
 }
