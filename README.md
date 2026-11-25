@@ -1,197 +1,102 @@
-# ChromeXt
+# ChromeXt · Android 浏览器脚本增强
 
-[![Build](https://img.shields.io/github/actions/workflow/status/JingMatrix/ChromeXt/android.yml?branch=master&logo=github&label=Build&event=push)](https://github.com/JingMatrix/ChromeXt/actions/workflows/android.yml?query=event%3Apush+is%3Acompleted+branch%3Amaster) [![Download](https://img.shields.io/github/v/release/JingMatrix/ChromeXt?color=orange&logoColor=orange&label=Download&logo=DocuSign)](https://github.com/JingMatrix/ChromeXt/releases/latest) [![Total](https://shields.io/github/downloads/JingMatrix/ChromeXt/total?logo=Bookmeter&label=Counts&logoColor=yellow&color=yellow)](https://github.com/JingMatrix/ChromeXt/releases)
+[![Android CI](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml/badge.svg?branch=master)](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml)
+[![Violentmonkey validation](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/violentmonkey.yml/badge.svg?branch=master)](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/violentmonkey.yml)
 
-Add UserScript and DevTools supports to Chromium based and WebView based browsers using Xposed framework.
+基于 [ChromeXt](https://github.com/JingMatrix/ChromeXt) 的 Android 浏览器增强模块，重点适配夸克浏览器，并逐步扩展至其他 Chromium、WebView 浏览器。
 
-##  How does it work?
+**使用 LSPosed 即可，模块 APP 本身无需 Root 授权。** 当前不提供免 Root 框架或 APK 内嵌适配保证。
 
-We hook the `onUpdateUrl` function in [UserScript.kt](app/src/main/kotlin/org/matrix/chromext/hook/UserScript.kt),
-add URL comparison there and evaluate JavaScript using the `javascript:` scheme (or DevTools Protocol when possible).
+[下载构建](https://github.com/YJ-Lazy/ChromeXt_kuake/actions) · [问题反馈](https://github.com/YJ-Lazy/ChromeXt_kuake/issues) · [原版文档（英文）](README.upstream.md)
 
-Chromium based browsers,
-such as [Bromite](https://github.com/bromite/bromite),
-and [Brave](https://github.com/brave/brave-browser), are fully supported.
+## 功能
 
-Most WebView based browsers are also supported, if not, please report it.
-Note for WebView based browsers users: you _only_ need to enable this module for the browser application you wish to use, _not_ for any possible WebView applications, _neither_ for the Android system.
+- 用户脚本安装、匹配及执行，沿用 ChromeXt 的 GM API 实现。
+- 夸克 UC/U4 内核专用适配及浏览器内悬浮入口。
+- APP 内统一脚本清单、源码查看、搜索、按浏览器分配及启停。
+- 跨浏览器脚本源码同步，各浏览器的 GM 存储独立。
+- 自动发现浏览器，按运行时内核特征尝试适配，不再仅依赖固定 Chromium 包名。
+- Eruda 调试工具及原有浏览器菜单能力（依赖具体内核）。
+- 独立诊断日志：记录适配过程、异常堆栈及同步状态，支持刷新、复制、分享和删除。
+- 原生卡片式管理界面，支持系统深色模式。
 
-## Usage
+以上为当前源码实现范围，并非所有浏览器均已通过真机验证。
 
-<p align="center"><a href="https://www.youtube.com/watch?v=1Qm4dU-XnJM"><img src="https://img.youtube.com/vi/1Qm4dU-XnJM/0.jpg" /></a></p>
+## 安装与使用
 
-ChromeXt requires **Xposed framework**.
+1. 在已安装 LSPosed 的设备上，从本仓库 [GitHub Actions](https://github.com/YJ-Lazy/ChromeXt_kuake/actions/workflows/android.yml) 选择成功的构建，下载并解压 APK 产物。GitHub 可能要求登录。
+2. 安装 APK（测试可使用 Debug APK；未签名 Release APK 需自行签名）。
+3. 在 LSPosed 中启用 ChromeXt，并勾选需要增强的浏览器作用域。
+4. 强制停止并重新打开浏览器，访问网页。
+5. 通过浏览器内菜单或夸克悬浮入口安装用户脚本（如 `.user.js` 链接）。
+6. 打开 ChromeXt APP，在脚本页或浏览器页管理脚本分配。刷新网页后应用配置。
 
-For root users, install [Vector](https://github.com/JingMatrix/Vector) first,
-pick up the latest built APK from my repo's [GitHub Actions](https://github.com/JingMatrix/ChromeXt/actions) and install it.
+不需要为 Android 系统、System UI 或所有 WebView 宿主应用启用模块。无需向模块 APP 单独授予 Root 权限。
 
-For non-root users,
-I modify a bit [LSPatch](https://github.com/JingMatrix/LSPatch) to support `ChromeXt`; here is how to use it:
-1. Download the latest `lspatch-release` from my [GitHub Actions](https://github.com/JingMatrix/LSPatch/actions).
-2. Download the latest `ChromeXt.apk` from my [GitHub Actions](https://github.com/JingMatrix/ChromeXt/actions).
-3. Extract previously downloaded files to get files `lspatch.jar` (with some suffix) and `ChromeXt-signed.apk`.
-4. Patch your APK (taking `arm64_ChromePublic.apk` as example) using the following command: `java -jar lspatch.jar arm64_ChromePublic.apk -d -v -m ChromeXt-signed.apk --force --injectdex`. If `java` environment is not available, please consider using the provided `manager` APK (and check the `Inject loader dex` option).
-5. Install the patched APK, which might require you to first uninstall the one on your devices.
+## 浏览器兼容性
 
-Notes: currently _to download_ files from `GitHub Actions`, one needs to log in GitHub.
+| 浏览器 | 适配情况 |
+| --- | --- |
+| 夸克 | UC/U4 专用适配；已有基础注入验证，最新版本待回归 |
+| Chrome、Brave、Kiwi、Vivaldi 等 | 继承上游 Chromium 适配，具体版本待验证 |
+| Edge、三星浏览器等 | 尝试运行时 Chromium 检测 |
+| Via 等 | 尝试通用 WebView 适配 |
+| 小米浏览器、360 浏览器 | 保留原有专用路径 |
+| UC、QQ 浏览器等 | 待验证或补充专用内核适配 |
+| Firefox | Gecko 内核尚无专用适配 |
 
-The author uploads releases to [Xposed-Modules-Repo](https://github.com/Xposed-Modules-Repo/org.matrix.chromext/releases) when needed, but not that frequently.
+LSPosed 作用域开放不等于内核兼容。浏览器必须具备可用的注入路径；APP 自动发现和跨进程同步还依赖系统浏览器识别及包可见性。
 
-You can then install UserScripts from popular sources: URLs that ends with `.user.js`.
+## 跨浏览器脚本管理
 
-### Supported API
+在浏览器 A 安装脚本并加载网页后，模块尝试将脚本源码同步到 APP。随后可在 APP 中为浏览器 B 启用该脚本；浏览器 B 下次注入时尝试导入并执行匹配脚本。
 
-Currently, ChromeXt supports almost all [Tampermonkey APIs](https://www.tampermonkey.net/documentation.php?locale=en):
+- 启停配置在下次页面注入时生效，不会立即终止已经运行的脚本。
+- 当前为基础同步实现，单次源码传输约 200 KB 上限。
+- 同名脚本版本冲突、源码更新传播、统一删除及 APP 内完整安装/编辑仍待完善。
+- 浏览器菜单与 APP 的启停状态尚未完全统一。
 
-1. @name (colons not allowed), @namespace, @description and so on
-2. @match (conform to the [Chrome Standard](https://developer.chrome.com/docs/extensions/mv2/match_patterns/), supports [regular expressions](https://developer.android.com/reference/java/util/regex/Pattern))
-3. @include = @match, @exclude
-4. @run-at: document-start, document-end, document-idle (the default and fallback value)
-5. @grant: GM_addStyle, GM_addElement, GM_xmlhttpRequest, GM_openInTab, GM_registerMenuCommand (shown in the `Resources` panel of eruda), GM_unregisterMenuCommand, GM_download, unsafeWindow (= window)
-6. @grant: GM_setValue, GM_getValue (less powerful than GM.getValue), GM_listValues, GM_addValueChangeListener, GM_removeValueChangeListener, GM_setClipboard, GM_cookie, GM_notification, window.close
-7. @require, @resource (without [Subresource Integrity](https://www.tampermonkey.net/documentation.php#api:Subresource_Integrity))
-8. @inject-into, @sandox: by default, imported scripts using `@require` can define/overwrite global JavaScript objects; one can set `@inject-into content` or `@sandbox DOM` to disable this behavior
-9. @noframes: note that, to load UserScripts for frames, there must be a script with `@grant frames` on the main page
+## 适配反馈与日志
 
-These APIs are implemented differently from the official ones, please refer to the source files
-[Local.kt](app/src/main/kotlin/org/matrix/chromext/script/Local.kt) and
-[GM.js](app/src/main/assets/GM.js) if you have doubts or questions.
+如果浏览器无法使用：
 
-Moreover, there is the powerful (also dangerous) `GM.ChromeXt` API, which must be declared by `@grant GM.ChromeXt` to _unlock_ its usage.
-It is locked by default so that the users are protected from malicious UserScripts exploiting ChromeXt.
-This API allows scripts to use the JavaScript method `ChromeXt.dispatch(action, payload)`, which is fundamental to implement other APIs. (Hence, one can find usage examples in [GM.js](app/src/main/assets/GM.js)).
-Dispatched `action` and `payload` are handled by [Listener.kt](app/src/main/kotlin/org/matrix/chromext/Listener.kt).
+1. 检查 LSPosed 模块和目标浏览器作用域是否启用。
+2. 强制停止浏览器后重新打开，复现问题。
+3. 进入 ChromeXt APP → 日志 → 刷新 → 一键复制适配日志。
+4. 在 [Issues](https://github.com/YJ-Lazy/ChromeXt_kuake/issues) 提供浏览器名称、版本、Android 版本、LSPosed 版本、复现步骤及日志。
 
-### UserScripts manager front end
+模块通过跨进程接口将日志保存到 APP 私有文件，不再通过 `su` 读取系统日志。删除日志仅删除模块自己的日志文件，不影响其他模块或系统日志。若模块未加载或通信失败，请补充 LSPosed 管理器中的相关日志。提交前请检查并移除个人信息及敏感网址。
 
-To manage scripts installed by `ChromeXt`, here are a simple front end hosted on [matrix-transformation.dev](https://jing.matrix-transformation.dev/ChromeXt/) (also reachable through its former address [github.io](https://jingmatrix.github.io/ChromeXt/), which now redirects there) and two mirrors of it (in case that you have connection issues): [onrender.com](https://jianyu-ma.onrender.com/ChromeXt/), [netlify.app](https://jianyu-ma.netlify.app/ChromeXt/).
+## 开发状态
 
-### Edit scripts before installing them
+- [x] 夸克专用注入适配与悬浮入口
+- [x] APP 脚本及浏览器管理界面
+- [x] 基础跨浏览器脚本分配
+- [x] 动态浏览器检测
+- [x] 独立日志存储及删除（源码已实现，待验证）
+- [ ] 完整脚本安装、编辑、删除及版本同步
+- [ ] 常见浏览器真机兼容性回归
+- [ ] 无 APP Root 授权场景回归
+- [ ] Violentmonkey 完整 Android 运行时移植
 
-If you cancel the prompt of installing a new UserScript, then you can edit it directly in Chrome.
-Use the `Install UserScript` page menu to install your modified UserScript.
+目前实际脚本运行仍使用 ChromeXt 的实现。仓库已引入 Violentmonkey 上游构建验证流程，但这不代表其完整运行时已移植。
 
-### DevTools for developers
+## 构建
 
-From the three dots page menu, ChromeXt offers you the
-1. `Developer tools` menu for the UserScript manager front end,
-2. `Eruda console` menu for other pages.
+使用 JDK 21，在项目根目录执行：
 
-For WebView based browsers (and Chromium forks that ship their own page menu, such as Herond and Whale), these menu items are presented in the context menu.
+```bash
+./gradlew app:assembleDebug
+./gradlew app:assembleRelease
+```
 
-## Bonus
+Windows 使用 `gradlew.bat`。构建状态及产物以本仓库 Actions 为准。
 
-Since WebView based browsers have no unified designs, the following
-first four features are not supported for them.
+## 致谢与许可证
 
-### Open in Chrome
+- [JingMatrix/ChromeXt](https://github.com/JingMatrix/ChromeXt)：原始项目及用户脚本实现。
+- [Violentmonkey](https://github.com/violentmonkey/violentmonkey)：迁移研究及上游验证。
+- [Eruda](https://github.com/liriliri/eruda)：网页调试工具。
+- [LSPosed](https://github.com/LSPosed/LSPosed)：Hook 框架。
 
-The application `ChromeXt` is able to
-1. received shared texts to search them using `Google`,
-2. open JavaScript files to install them as UserScripts.
-
-The reversed priority order of opening which Chromium based browsers is given in [AndroidManifest.xml](app/src/main/AndroidManifest.xml).
-
-### Solution of system gesture conflicts
-
-By default, the history forward gesture of Chrome is available near the vertical center of screen.
-On other areas, only the system gesture is available.
-One can disable this behavior through the `Developer options` menu.
-(Tap seven times on the Chrome version from the Chrome settings, you will see the `Developer options` menu.)
-(In [Vivaldi](https://vivaldi.com/en/android/) browsers, `Developer options` menu is removed by its developers.)
-
-### Enable reader mode manually
-
-ChromeXt adds a book icon in the page menu to enable reader (distiller) mode manually.
-
-### Export browser bookmarks
-
-Bookmarks can be exported in HTML format through the `Developer options` menu.
-
-### AD Blocker solution
-
-For blocking network requests, I recommend to use `AdAway` or any proxy AD Blocker such as `clash`.
-
-A content cosmetic blocker is embedded into ChromeXt with the help of eruda.
-To use it, first open the `Eruda console`.
-In the `Elements` panel, one can use the `pointer` icon to select elements on the page.
-After clicking the `delete` icon for a selected element, a corresponding filter will be saved to the `Resources` panel,
-where one can manage previous added filters.
-These filters are saved in the browser even after clearing the site's data.
-
-Another way to block ADs is using the [Content-Security-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src) to block some scripts from loading.
-
-### User-Agent spoofing
-
-One can edit the User-Agent from the `Info` panel of `Eruda console`.
-A valid User-Agent should contain only ASCII characters.
-Currently, ChromeXt only changes the `User-Agent` HTTP header, which
-works well but is [deprecated](https://wicg.github.io/ua-client-hints/#user-agent).
-
-For Chromium based browsers, when the User-Agent spoofing is not taking effects, refresh the page using the reload button in the page menu.
-(By contrast, a swipe refresh might be insufficient.)
-
-Note that the DevTools can also change User-Agent.
-
-## Contribute to this project
-
-Before you submit your pull-requests, please ensure that the command
-`./gradlew build` or `gradlew.bat build` produces no warnings and no errors,
-and run `./gradlew format` to apply the project's [ktfmt](https://github.com/facebook/ktfmt) code style.
-
-Here are corresponding files you might want / need to change:
-1. Front end: [manager.vue](https://github.com/JingMatrix/jingmatrix.github.io/tree/main/components/ChromeXt/manager.vue)
-2. Tampermonkey API: [Local.kt](app/src/main/kotlin/org/matrix/chromext/script/Local.kt)
-and [GM.js](app/src/main/assets/GM.js)
-3. Eruda configuration: [eruda.js](app/src/main/assets/eruda.js)
-4. Support more WebView based browsers: [WebView.kt](app/src/main/kotlin/org/matrix/chromext/hook/WebView.kt)
-
-## Development plans
-
-- [x] Make it possible to pass intents to Chrome with `file` scheme
-- [x] Fix encoding problem for Chrome downloaded JavaScript files
-- [x] Inject module resource into Chrome
-- [x] Implement developer tools
-- [x] Use local versions of [eruda](https://github.com/liriliri/eruda)
-- [x] Improve eruda incorporation with Chrome
-- [x] Add more information in the preference screen
-- [x] Support more [Tampermonkey API](https://www.tampermonkey.net/documentation.php)s
-- [x] Find elegant way to support DevTools for Android 11-
-- [x] Add cosmetic AdBlocker using eruda
-- [x] Find way to get current interactive tab
-- [x] Remove AndroidX Room dependency to reduce app size
-- [x] Support non-split version of Android Chrome
-- [x] Solve the menu hook problem for non-split versions
-- [x] Handle multiple Tab Model
-- [x] Forward DevTools server socket
-- [x] A mobile friendly DevTools front end
-- [x] Allow user to trigger reader mode
-- [x] Support @resource API
-- [x] Make GestureNav Fix optional
-- [x] Add an open source License
-- [x] Support mocking User-Agent
-- [ ] ~~Support [urlFilter](https://developer.chrome.com/docs/extensions/reference/declarativeNetRequest/#type-RuleCondition) syntax~~
-- [x] Improve `Open in Chrome` function
-- [x] Implement fully `GM_info`
-- [x] Eruda fails due to [Injection Sinks](https://developer.mozilla.org/en-US/docs/Web/API/Trusted_Types_API)
-- [x] Hide page_info panel automatically
-- [x] Fix page menu injection position
-- [ ] ~~Use [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) as UserScript engine~~
-- [ ] ~~Use `adb forward` to support non-root users~~
-- [x] Fully support WebView based browsers
-- [x] Fix [LSPatch for isolated process](https://github.com/LSPosed/LSPatch/issues/190) issue
-- [x] Implement UserScript storage
-- [x] Re-implement GM_xmlhttpRequest
-- [x] Convert exported bookmarks to HTML format
-- [x] Show executed scripts on current page
-- [x] Make a YouTube presentation video
-- [x] Implement GM_cookie
-- [x] Improve valid UserScripts Url detection
-- [ ] Save and present script errors and `GM_log` logs
-- [ ] Use `iframe` and local server to run general [WebExtensions](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions)
-- [ ] Bypass `style-src` rule for `eruda`, such as Mastodon
-- [ ] Support importing UserScripts from Tampermonkey exports
-- [ ] Support backup and restore
-- [ ] Add recommended UserScripts to the front end manager
-- [x] Add [chrome devtools front-end](https://chromium.googlesource.com/devtools/devtools-frontend/), see [devtools_http_handler.cc](https://source.chromium.org/chromium/chromium/src/+/main:content/browser/devtools/devtools_http_handler.cc) as reference.
-- [x] Hide inserted menu for non-page
+保留项目 [LICENSE](LICENSE) 与 [Violentmonkey MIT 许可证](third_party/violentmonkey/LICENSE)。原版功能、API 及开发说明见 [README.upstream.md](README.upstream.md)；其中的上游安装方式及兼容性描述不代表本分支的支持承诺。
