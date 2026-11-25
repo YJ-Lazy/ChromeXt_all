@@ -54,14 +54,20 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
   override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
     Log.d(lpparam.processName + " started")
     if (lpparam.packageName == "org.matrix.chromext") return
-    if (supportedPackages.contains(lpparam.packageName)) {
+    if (lpparam.packageName == "android" || lpparam.packageName == "com.android.systemui") return
+    Log.i("[CX-ADAPTER] package=${lpparam.packageName}; process=${lpparam.processName}; sdk=${android.os.Build.VERSION.SDK_INT}")
+    val chromium = runCatching {
+      lpparam.classLoader.loadClass("org.chromium.ui.base.WindowAndroid")
+    }.getOrNull()
+    Log.i("[CX-ADAPTER] chromium=${chromium != null}; known=${supportedPackages.contains(lpparam.packageName)}")
+    if (chromium != null && lpparam.packageName != "com.quark.browser") {
       // Every constructor taking a Context, rather than a fixed index into an order the JLS leaves
       // unspecified: browsers do not agree on how many constructors WindowAndroid has, and Whale in
       // particular has no one-argument overload, so index 1 there is a test-only constructor the
       // browser never calls and the whole module stays inert. The overloads delegate into one
       // another, so hooking all of them just means the callback can run twice, which Chrome.init
       // and initHooks both already absorb.
-      val windowAndroid = lpparam.classLoader.loadClass("org.chromium.ui.base.WindowAndroid")
+      val windowAndroid = chromium
       val constructors =
           windowAndroid.declaredConstructors.filter {
             val first = it.parameterTypes.firstOrNull()
@@ -79,7 +85,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
           // entries.
           if (!Chrome.isVivaldi) {
             runCatching { initHooks(PreferenceHook) }
-                .onFailure { if (BuildConfig.DEBUG) Log.ex(it) }
+                .onFailure { Log.ex(it) }
           }
           runCatching {
             initHooks(
@@ -99,6 +105,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
       }
     } else {
+      Log.i("[CX-ADAPTER] trying WebView adapter for ${lpparam.packageName}")
       val ctx = AndroidAppHelper.currentApplication()
 
       Chrome.isMi =
