@@ -28,7 +28,8 @@ class ScriptManagerActivity : Activity() {
   override fun onResume() { super.onResume(); refresh() }
   private fun refresh() {
     list.removeAllViews()
-    val browsers = resources.getStringArray(R.array.xposedscope).filter {
+    val detected = packageManager.queryIntentActivities(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE), 0).map { it.activityInfo.packageName }
+    val browsers = (resources.getStringArray(R.array.xposedscope).toList() + detected).distinct().filter {
       packageManager.getLaunchIntentForPackage(it) != null || prefs.contains("inventory:$it")
     }
     val ids = prefs.all.keys.filter { it.startsWith("source:") }.map { it.removePrefix("source:") }.sorted()
