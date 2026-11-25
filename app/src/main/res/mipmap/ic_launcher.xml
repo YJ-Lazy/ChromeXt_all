@@ -1,3 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?>
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-	android:drawable="@drawable/ic_chrome" />
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+<path android:fillColor="#101B50" android:pathData="M0,0H108V108H0Z"/>
+<path android:fillColor="#DCEAFF" android:pathData="M42,29H59L71,41V76H42Q37,76 37,71V34Q37,29 42,29Z"/>
+<path android:fillColor="#56DDF7" android:pathData="M59,29V41H71Z"/>
+<path android:strokeColor="#183B91" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M49,47L44,52L49,57M59,47L64,52L59,57M56,45L52,59"/>
+<path android:strokeColor="#759BEE" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M45,64H62M45,70H56"/>
+<path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M30,40L19,53L30,66M78,40L89,53L78,66"/>
+<path android:strokeColor="#25CFF5" android:strokeWidth="5" android:strokeLineCap="round" android:pathData="M27,67C9,91 62,79 83,57C98,40 79,33 73,36"/>
+</vector>
