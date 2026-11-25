@@ -27,12 +27,19 @@ jobs:
           grep -q 'versionName = "4.1.2"' app/build.gradle.kts
           cp app/build/outputs/apk/debug/app-debug.apk ScriptHub-v4.1.2.apk
           "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify ScriptHub-v4.1.2.apk
-          gh release create v4.1.2 ScriptHub-v4.1.2.apk --target "$GITHUB_SHA" --title "ScriptHub v4.1.2" --latest --notes-file - <<'NOTES'
+          cat > release-notes.md <<'NOTES'
           ## 更新内容
           - 重绘主界面，新增三栏统计及图标导航
           - 统一蓝紫色主题、搜索框、按钮和脚本卡片
           - 优化浏览器图标、开关及状态栏对比度
           - 保留批量导入导出和日志功能
+          - 统一诊断日志页面的 ScriptHub 品牌、主题及布局，保留双通道日志读取
           
           本次发布 Debug 签名 APK。不同构建的签名可能不同，覆盖安装失败时请先备份数据。其他浏览器及新增导入功能仍需真机验证。
           NOTES
+          if gh release view v4.1.2 >/dev/null 2>&1; then
+            gh release upload v4.1.2 ScriptHub-v4.1.2.apk --clobber
+            gh release edit v4.1.2 --notes-file release-notes.md
+          else
+            gh release create v4.1.2 ScriptHub-v4.1.2.apk --target "$GITHUB_SHA" --title "ScriptHub v4.1.2" --latest --notes-file release-notes.md
+          fi
