@@ -46,6 +46,17 @@ object LogRecorder {
       if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
     }.getOrElse { "Root 读取失败：$it" }
   }
-  fun read(context: Context? = null): String = root()
-  fun clear(context: Context? = null): Boolean = false
+  fun read(context: Context? = null): String {
+    val output = root()
+    val previous = context?.getSharedPreferences("diagnostic_clear", 0)?.getString("snapshot", null)
+    if (previous.isNullOrEmpty()) return output
+    val oldLines = previous.lineSequence().toHashSet()
+    return output.lineSequence().filter { it !in oldLines }.joinToString("\n")
+  }
+  fun clear(context: Context? = null): Boolean {
+    val ctx = context ?: return false
+    val snapshot = root()
+    if (snapshot.startsWith("Root 操作失败") || snapshot.startsWith("Root 读取失败")) return false
+    return ctx.getSharedPreferences("diagnostic_clear", 0).edit().putString("snapshot", snapshot).commit()
+  }
 }
