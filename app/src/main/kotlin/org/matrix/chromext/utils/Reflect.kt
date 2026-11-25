@@ -39,7 +39,7 @@ fun <T : java.lang.reflect.Member> Iterable<T>.firstDeclared(): T? = filter {
     .minByOrNull { r8Rank(it.name) }
 
 fun findMethod(clz: Class<*>, findSuper: Boolean = false, condition: MethodCondition): Method {
-  return findMethodOrNull(clz, findSuper, condition) ?: throw NoSuchMethodException()
+  return findMethodOrNull(clz, findSuper, condition) ?: throw NoSuchMethodException("No matching method in ${clz.name} (searchSuper=$findSuper)")
 }
 
 fun findMethodOrNull(
@@ -72,7 +72,7 @@ fun Any.invokeMethod(vararg args: Any?, condition: MethodCondition): Any? {
   findMethodOrNull(this::class.java, true, condition)?.let {
     return it(this, *args)
   }
-  throw NoSuchMethodException()
+  throw NoSuchMethodException("No matching method in ${this::class.java.name} for ${args.size} arguments")
 }
 
 fun findField(clz: Class<*>, findSuper: Boolean = false, condition: FieldCondition): Field {

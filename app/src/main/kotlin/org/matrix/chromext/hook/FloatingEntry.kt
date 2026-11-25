@@ -9,7 +9,6 @@ import android.widget.PopupWindow
 import android.widget.TextView
 import java.util.WeakHashMap
 import org.matrix.chromext.Chrome
-import org.matrix.chromext.script.Local
 import org.matrix.chromext.utils.findMethod
 import org.matrix.chromext.utils.hookAfter
 import org.matrix.chromext.utils.invokeMethod
@@ -29,6 +28,7 @@ object FloatingEntryHook : BaseHook() {
   private const val MENU_INSTALL = 2
   private const val MENU_CONSOLE = 3
   private const val MENU_TEST = 4
+  private const val MENU_WEB_MANAGE = 5
 
   private val entries = WeakHashMap<Any, PopupWindow>()
 
@@ -85,10 +85,15 @@ object FloatingEntryHook : BaseHook() {
     }
     menu.menu.add(0, MENU_CONSOLE, 2, "开发者控制台")
     menu.menu.add(0, MENU_TEST, 3, "JavaScript 执行测试")
+    menu.menu.add(0, MENU_WEB_MANAGE, 4, "网页脚本管理")
     menu.setOnMenuItemClickListener { item ->
       Log.i("Quark floating menu action clicked: ${item.title}; url=$safeUrl")
       when (item.itemId) {
         MENU_MANAGE -> {
+          QuarkBridge.showManager(webView)
+          true
+        }
+        MENU_WEB_MANAGE -> {
           runCatching {
             val result = webView.invokeMethod(FRONT_END_URL) {
               name == "loadUrl" && parameterTypes.size == 1 &&
@@ -104,12 +109,7 @@ object FloatingEntryHook : BaseHook() {
           if (url != null) {
             Log.i("Quark install requested; url=$safeUrl; bypassSandbox=${shouldBypassSandbox(url)}")
             runCatching {
-              Chrome.evaluateJavascript(
-                  listOf("Symbol.installScript(true);"),
-                  webView,
-                  null,
-                  shouldBypassSandbox(url),
-              )
+              QuarkBridge.installCurrent(webView, url)
             }.onFailure { Log.ex(it, "Quark install JavaScript dispatch failed") }
           } else {
             Log.e("Quark install requested but current URL is null")
@@ -118,16 +118,13 @@ object FloatingEntryHook : BaseHook() {
         }
         MENU_CONSOLE -> {
           Log.i("Quark Eruda console requested; url=$safeUrl")
-          runCatching { Chrome.evaluateJavascript(listOf(Local.openEruda), webView) }
+          runCatching { QuarkBridge.openEruda(webView) }
               .onFailure { Log.ex(it, "Quark Eruda JavaScript dispatch failed") }
           true
         }
         MENU_TEST -> {
           runCatching {
-            WebViewHook.evaluateJavascript(
-                "(function(){console.log('VM_PROBE result='+(6*7));alert('VM probe: '+(6*7));})();",
-                webView,
-            )
+            QuarkBridge.probe(webView)
           }.onFailure { Log.ex(it, "VM probe dispatch failed") }
           true
         }

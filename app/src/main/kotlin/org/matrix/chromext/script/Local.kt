@@ -5,6 +5,7 @@ import android.net.Uri
 import java.io.File
 import java.io.FileReader
 import kotlin.random.Random
+import java.security.SecureRandom
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
@@ -98,8 +99,11 @@ object Local {
   val openEruda: String
   val cspRule: String
   val cosmeticFilter: String
-  val key = Random.nextDouble()
-  val name = randomString(25)
+  private val secureRandom = SecureRandom()
+  val key = secureRandom.nextDouble()
+  val name = if (Chrome.packageName == "com.quark.browser") {
+    (1..25).map { ('a' + secureRandom.nextInt(26)) }.joinToString("")
+  } else randomString(25)
 
   var eruda_version: String?
 
@@ -145,7 +149,19 @@ object Local {
             .split("\n")
             .filter { if (it.length != 0) true else Random.nextDouble() > seed }
     anchorInChromeXt = parts.indexOfFirst { it.endsWith("// Kotlin anchor") } + 2
-    initChromeXt = parts.joinToString("\n")
+    val originalInit = parts.joinToString("\n")
+    // UC/U4 may drop console sourceURL and line metadata. A private queue is drained
+    // only through the native evaluateJavascript result callback; no console bypass.
+    initChromeXt = if (Chrome.packageName == "com.quark.browser") {
+      originalInit
+          .replace("const initKey = ", "const quarkQueue = []; const initKey = ")
+          .replace("this.#debug(backup.stringify({ action, payload, key: initKey }));",
+              "if (quarkQueue.length < 256) quarkQueue.push(backup.stringify({ action, payload, key: initKey }));")
+          .replace("    isLocked(throwError = false) {",
+              """    quarkReady(token) { return token === initKey; }
+    quarkDrain(token) { return token === initKey ? quarkQueue.splice(0, 64) : null; }
+    isLocked(throwError = false) {""")
+    } else originalInit
     openEruda =
         localScript[1]
             .replaceFirst("Symbol.ChromeXt", "Symbol." + name)

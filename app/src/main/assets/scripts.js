@@ -327,7 +327,9 @@ try {
   }
 } catch (e) {
   if (typeof define == "function") define.amd = false;
-  Symbol.ChromeXt.unlock(ChromeXtUnlockKeyForEruda).dispatch("loadEruda");
+  const bridge = Symbol.ChromeXt || Symbol["ChromeXt"];
+  if (!bridge) throw Error("ChromeXt bridge is not ready");
+  (bridge.isLocked() ? bridge.unlock(ChromeXtUnlockKeyForEruda) : bridge).dispatch("loadEruda");
 }
 // Kotlin separator
 

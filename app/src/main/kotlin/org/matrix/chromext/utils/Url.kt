@@ -80,7 +80,7 @@ fun isUserScript(url: String?, path: String? = null): Boolean {
   // intentionally returns an empty string for http(s), which previously meant that
   // ordinary .js URLs (and .user.js URLs with query strings) were never recognized.
   val candidate =
-      path
+      path?.takeIf { it.isNotBlank() }
           ?: if (url.startsWith("content://")) {
             resolveContentUrl(url)
           } else {
@@ -129,7 +129,7 @@ fun isChromeXtFrontEnd(url: String?): Boolean {
   // the one fixed path is compared without regard to case, because the netlify mirror lower cases
   // it to /chromext/ before serving the very same page.
   trustedHosts.forEach {
-    if (url.equals("https://" + it + "/ChromeXt/", ignoreCase = true)) return true
+    if (url.substringBefore('#').equals("https://" + it + "/ChromeXt/", ignoreCase = true)) return true
   }
   return false
 }

@@ -83,7 +83,7 @@ object Listener {
 
   private fun checkPermisson(action: String, key: Double, tab: Any?): Boolean {
     if (key != Local.key) return false
-    val url = Chrome.getUrl(tab)!!
+    val url = Chrome.getUrl(tab) ?: return false
     if (url.endsWith(".txt")) return false
     if (isUserScript(url) && !allowedActions.get("userscript")!!.contains(action)) return false
     if (allowedActions.get("front-end")!!.contains(action) && !isChromeXtFrontEnd(url)) return false
@@ -177,11 +177,14 @@ object Listener {
       val key = data.getDouble("key")
       val payload = data.optString("payload")
       if (checkPermisson(action, key, currentTab)) {
+        if (Chrome.packageName == "com.quark.browser") Log.d("[CX-BRIDGE] action=${action.take(40)}")
         val callback = on(action, payload, currentTab, auxObject, frameId)
         if (callback != null) Chrome.evaluateJavascript(listOf(callback), currentTab, frameId)
+      } else if (Chrome.packageName == "com.quark.browser") {
+        Log.w("[CX-BRIDGE] rejected action")
       }
     }
-        .onFailure { Log.i("${it::class.java.name}: startAction fails with " + text) }
+        .onFailure { Log.ex(it, "[CX-BRIDGE] action failed") }
   }
 
   fun on(
@@ -266,6 +269,10 @@ object Listener {
             insert(script)
             scripts.removeAll(scripts.filter { it.id == script.id })
             scripts.add(script)
+          }
+          if (Chrome.packageName == "com.quark.browser") {
+            Log.i("[CX-INSTALL] script saved")
+            Handler(Chrome.getContext().mainLooper).post { Log.toast(Chrome.getContext(), "脚本安装成功") }
           }
         }
       }
@@ -407,11 +414,12 @@ object Listener {
           codes.add("{${Local.eruda}}\n//# sourceURL=local://ChromeXt/eruda")
           Chrome.evaluateJavascript(codes, currentTab, frameId)
         } else {
-          on("updateEruda", JSONObject().put("load", true).toString())
+          on("updateEruda", JSONObject().put("load", true).toString(), currentTab, auxObject, frameId)
         }
       }
       "updateEruda" -> {
         val ctx = Chrome.getContext()
+        val requestedUrl = if (Chrome.packageName == "com.quark.browser") Chrome.getUrl(currentTab) else null
         Handler(ctx.mainLooper).post { Log.toast(ctx, "Updating Eruda...") }
         Chrome.IO.submit {
           checkErudaVerison(ctx) {
@@ -429,7 +437,13 @@ object Listener {
                 val file = File(ctx.filesDir, "Eruda.js")
                 file.outputStream().write(it.toByteArray())
               }
-              if (payload != "" && JSONObject(payload).optBoolean("load")) on("loadEruda")
+              if (payload != "" && JSONObject(payload).optBoolean("load")) {
+                Handler(ctx.mainLooper).post {
+                  if (requestedUrl == null || Chrome.getUrl(currentTab) == requestedUrl) {
+                    on("loadEruda", "", currentTab, auxObject, frameId)
+                  }
+                }
+              }
             }
           }
         }
@@ -477,11 +491,7 @@ object Listener {
             val ids = Array(jsonArray.length()) { jsonArray.getString(it) }
             val scripts = ScriptDbManager.scripts.filter { ids.contains(it.id) }
             if (data.optBoolean("delete")) {
-              val dbHelper = ScriptDbHelper(Chrome.getContext())
-              val db = dbHelper.writableDatabase
-              db.delete("script", "id = ?", ids)
-              ScriptDbManager.scripts.removeAll(scripts)
-              dbHelper.close()
+              ScriptDbManager.remove(*ids)
             } else {
               val result = JSONArray(scripts.map { it.meta })
               callback = "ChromeXt.post('script_meta', ${result});"

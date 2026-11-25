@@ -1,4 +1,6 @@
-const ChromeXt = Symbol.ChromeXt.unlock(ChromeXtUnlockKeyForEruda, false);
+const bridge = Symbol.ChromeXt || Symbol["ChromeXt"];
+if (!bridge) throw Error("ChromeXt bridge is not ready");
+const ChromeXt = bridge.isLocked() ? bridge.unlock(ChromeXtUnlockKeyForEruda, false) : bridge;
 
 eruda._inLocalPage =
   ["content://", "file://"].includes(location.origin) ||

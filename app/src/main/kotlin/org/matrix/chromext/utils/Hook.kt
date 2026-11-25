@@ -23,7 +23,7 @@ fun Method.hookBefore(
             try {
               hook(param)
             } catch (thr: Throwable) {
-              Log.ex(thr)
+              Log.ex(thr, "[CX-ERROR] before ${param.method}")
             }
       })
 }
@@ -38,7 +38,7 @@ fun Method.hookAfter(
             try {
               hooker(param)
             } catch (thr: Throwable) {
-              Log.ex(thr)
+              Log.ex(thr, "[CX-ERROR] after ${param.method}")
             }
       })
 }
@@ -57,7 +57,7 @@ fun Constructor<*>.hookAfter(
             try {
               hooker(param)
             } catch (thr: Throwable) {
-              Log.ex(thr)
+              Log.ex(thr, "[CX-ERROR] constructor ${param.method}")
             }
       })
 }

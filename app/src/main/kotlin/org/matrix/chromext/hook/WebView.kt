@@ -47,8 +47,7 @@ object WebViewHook : BaseHook() {
     ScriptDbManager.invokeScript(url, view)
   }
 
-  private val ucViewClients = mutableSetOf<Class<*>>()
-  private val ucChromeClients = mutableSetOf<Class<*>>()
+  private val ucMethods = mutableSetOf<java.lang.reflect.Method>()
   private val ucClientViews = java.util.WeakHashMap<Any, WeakReference<Any>>()
 
   private fun handleConsoleMessage(chromeClient: Any, consoleMessage: Any) {
@@ -75,38 +74,45 @@ object WebViewHook : BaseHook() {
                 }
                 ?.get()
           } else Chrome.getTab()
-      if (Chrome.packageName == "com.quark.browser" && webView == null) {
-        Log.d("UC/U4 console bridge: no associated WebView")
+      if (Chrome.packageName == "com.quark.browser") {
+        // UC/U4 dispatches through the authenticated evaluation callback instead.
         return
       }
       Listener.startAction(message, webView, chromeClient, sourceId)
     } else {
-      Log.d(messageLevel.toString() + ": [${sourceId}@${lineNumber}] ${message}")
+      if (Chrome.packageName != "com.quark.browser" ||
+          message.startsWith("VM_PROBE") || message.startsWith("[CX-") ||
+          messageLevel.toString() == "ERROR") {
+        Log.d(messageLevel.toString() + ": [${sourceId}@${lineNumber}] ${message.take(500)}")
+      }
     }
   }
 
   private fun hookUcWebViewClient(clientClass: Class<*>) {
-    if (!ucViewClients.add(clientClass)) return
-    findMethod(clientClass, true) {
+    val started = findMethod(clientClass, true) {
           name == "onPageStarted" && parameterCount == 3
         }
-        .hookAfter {
+    if (ucMethods.add(started)) started.hookAfter {
           if (it.args.size >= 2 && it.args[1] is String) {
             Log.d("UC/U4 onPageStarted callback received")
-            onUpdateUrl(it.args[1] as String, it.args[0])
+            QuarkBridge.pageStarted(it.args[0], it.args[1] as String)
           }
         }
     runCatching {
-      findMethod(clientClass, true) { name == "onPageFinished" && parameterCount == 2 }
-          .hookAfter { Log.d("UC/U4 onPageFinished callback received") }
+      val finished = findMethod(clientClass, true) { name == "onPageFinished" && parameterCount == 2 }
+      if (ucMethods.add(finished)) finished.hookAfter {
+            Log.d("UC/U4 onPageFinished callback received")
+            if (it.args.size >= 2 && it.args[1] is String) {
+              QuarkBridge.pageFinished(it.args[0], it.args[1] as String)
+            }
+          }
     }.onFailure { Log.ex(it, "Unable to hook UC/U4 onPageFinished") }
   }
 
   private fun hookUcWebChromeClient(clientClass: Class<*>) {
-    if (!ucChromeClients.add(clientClass)) return
     runCatching {
-      findMethod(clientClass, true) { name == "onConsoleMessage" && parameterCount == 1 }
-          .hookAfter { handleConsoleMessage(it.thisObject, it.args[0]) }
+      val console = findMethod(clientClass, true) { name == "onConsoleMessage" && parameterCount == 1 }
+      if (ucMethods.add(console)) console.hookAfter { handleConsoleMessage(it.thisObject, it.args[0]) }
     }.onFailure { Log.ex(it, "Unable to hook UC/U4 onConsoleMessage") }
   }
 
@@ -145,7 +151,10 @@ object WebViewHook : BaseHook() {
     }
 
     findMethod(WebView!!) { name == "onAttachedToWindow" }
-        .hookAfter { Chrome.updateTab(it.thisObject) }
+        .hookAfter {
+          Chrome.updateTab(it.thisObject)
+          if (Chrome.packageName == "com.quark.browser") QuarkBridge.resume(it.thisObject)
+        }
 
     if (Chrome.packageName != "com.quark.browser") {
       findMethod(ViewClient!!, true) { name == "onPageStarted" }

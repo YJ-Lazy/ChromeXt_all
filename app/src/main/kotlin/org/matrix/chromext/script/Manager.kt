@@ -9,6 +9,7 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.hook.QuarkBridge
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.invokeMethod
 import org.matrix.chromext.utils.isChromeXtFrontEnd
@@ -49,6 +50,8 @@ object ScriptDbManager {
   fun insert(vararg script: Script) {
     val dbHelper = ScriptDbHelper(Chrome.getContext())
     val db = dbHelper.writableDatabase
+    db.beginTransaction()
+    try {
     script.forEach {
       val lines = db.delete("script", "id = ?", arrayOf(it.id))
       if (lines > 0) {
@@ -65,13 +68,27 @@ object ScriptDbManager {
               put("storage", it.storage.toString())
             }
           }
-      runCatching { db.insertOrThrow("script", null, values) }
-          .onFailure {
-            Log.e("Fail to store script ${values.getAsString("id")} into SQL database.")
-            Log.ex(it)
-          }
+      db.insertOrThrow("script", null, values)
     }
-    dbHelper.close()
+    db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+      dbHelper.close()
+    }
+    Log.i("[CX-DB] persisted ${script.size} script(s)")
+  }
+
+  fun remove(vararg ids: String) {
+    if (ids.isEmpty()) return
+    val helper = ScriptDbHelper(Chrome.getContext())
+    try {
+      val placeholders = ids.joinToString(",") { "?" }
+      helper.writableDatabase.delete("script", "id IN ($placeholders)", ids.map { it }.toTypedArray())
+      scripts.removeAll { it.id in ids }
+      Log.i("[CX-DB] removed ${ids.size} script(s)")
+    } finally {
+      helper.close()
+    }
   }
 
   private fun fixEncoding(url: String, path: String, codes: MutableList<String>) {
@@ -147,6 +164,15 @@ object ScriptDbManager {
     codes.add("//# sourceURL=local://ChromeXt/init" + if (frameId == null) "" else "/" + frameId)
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
     val initScript = codes.joinToString("\n")
+
+    if (Chrome.packageName == "com.quark.browser" && webView != null && frameId == null) {
+      val matched = if (runScripts) scripts.filter { matching(it, url) } else emptyList()
+      val userCodes = mutableListOf<String>()
+      matched.forEach { GM.bootstrap(it, userCodes) }
+      Log.d("[CX-MATCH] matched=${matched.size}; installed=${scripts.size}; trusted=$trustedPage")
+      QuarkBridge.inject(webView, url, initScript, userCodes, trustedPage)
+      return
+    }
 
     val asyncEvaluation = bypassSandbox || frameId != null
     var framesGranted = false
