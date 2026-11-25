@@ -112,7 +112,14 @@ object ScriptDbManager {
   }
 
   fun invokeScript(url: String, webView: Any? = null, frameId: String? = null) {
-    val disabled = org.matrix.chromext.ScriptPolicy.disabled(scripts.map { it.id })
+    val disabled = org.matrix.chromext.ScriptPolicy.disabled(scripts.toList()) { id, source ->
+      val parsed = parseScript(source)
+      if (parsed != null && parsed.id == id && scripts.none { it.id == id }) {
+        insert(parsed)
+        scripts.add(parsed)
+        Log.i("[CX-SYNC] assigned script imported")
+      }
+    }
     Log.d("[CX-POLICY] installed=${scripts.size}; disabled=${disabled.size}")
     val codes = mutableListOf<String>(Local.initChromeXt)
     val path = resolveContentUrl(url)
