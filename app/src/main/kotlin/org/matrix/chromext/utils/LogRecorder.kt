@@ -1,62 +1,63 @@
 package org.matrix.chromext.utils
 
 import android.content.Context
-import android.os.Process
+import android.net.Uri
+import android.os.Bundle
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 object LogRecorder {
   @Volatile private var browserContext: Context? = null
   private val lock = Any()
+  private val pending = ArrayDeque<Pair<String,String>>()
+  private val worker = ThreadPoolExecutor(1,1,30,TimeUnit.SECONDS,ArrayBlockingQueue<Runnable>(256),ThreadPoolExecutor.DiscardOldestPolicy())
   fun initialize(context: Context) {
-    browserContext = context
-    write("INFO", "Hook recorder initialized")
+    synchronized(lock) {
+      if (browserContext != null) return
+      browserContext = context.applicationContext ?: context
+      while (pending.isNotEmpty()) {
+        val (level,message) = pending.removeFirst()
+        write(level,message)
+      }
+    }
+    write("INFO","Hook recorder initialized")
   }
   fun isEnabled(context: Context? = null): Boolean = true
   fun setEnabled(context: Context, enabled: Boolean) {}
   fun write(level: String, message: String, context: Context? = null) {
-    val ctx = context ?: browserContext ?: return
-    if (ctx.packageName != "com.quark.browser") return
-    runCatching {
+    val ctx = context ?: browserContext
+    if (ctx == null) {
       synchronized(lock) {
-        val dir = File(ctx.filesDir, "chromext-diagnostics")
-        dir.mkdirs()
-        val file = File(dir, "hook-${Process.myPid()}.log")
-        if (file.length() > 512 * 1024) file.writeText("")
-        val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
-        file.appendText("$stamp [$level] ${message.take(4096)}\n")
+        if (pending.size >= 128) pending.removeFirst()
+        pending.addLast(level to message.take(8192))
       }
-    }.onFailure { android.util.Log.e("ChromeXt", "Local diagnostic write failed", it) }
+      return
+    }
+    worker.execute {
+      runCatching {
+        ctx.contentResolver.call(Uri.parse("content://org.matrix.chromext.diagnostics"),"append",null,
+          Bundle().apply { putString("level",level); putString("message",message.take(8192)) })
+      }.onFailure { android.util.Log.e("CXDiagnostics","Diagnostic IPC failed",it) }
+    }
   }
-  internal fun writeLocal(context: Context, level: String, message: String) = write(level, message, context)
-  private fun root(): String {
-    val cmd = """
-      id
-      echo '--- ChromeXt Logcat ---'
-      logcat -d -t 5000 -v threadtime -s CXDiagnostics:V 2>&1
-      echo '--- LSPosed module logs ---'
-      grep -h -F 'org.matrix.chromext,XposedBridge' /data/adb/lspd/log/modules*.log 2>/dev/null | tail -n 200
-    """.trimIndent()
-    return runCatching {
-      val process = java.lang.ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
-      val output = process.inputStream.bufferedReader().use { it.readText() }
-      val code = process.waitFor()
-      if (code == 0) output.takeLast(200000) else "Root 操作失败 ($code): $output"
-    }.getOrElse { "Root 读取失败：$it" }
+  private fun file(context: Context) = File(context.filesDir,"module-diagnostics.log")
+  internal fun writeLocal(context: Context, level: String, message: String) {
+    synchronized(lock) {
+      val f = file(context)
+      if (f.length() > 512 * 1024) f.writeText(f.readText().takeLast(200000))
+      val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS",Locale.US).format(Date())
+      f.appendText("$stamp [$level] ${message.take(8192)}\n")
+    }
   }
-  fun read(context: Context? = null): String {
-    val output = root()
-    val previous = context?.getSharedPreferences("diagnostic_clear", 0)?.getString("snapshot", null)
-    if (previous.isNullOrEmpty()) return output
-    val oldLines = previous.lineSequence().toHashSet()
-    return output.lineSequence().filter { it !in oldLines }.joinToString("\n")
+  fun read(context: Context? = null): String = synchronized(lock) {
+    if (context == null) "" else runCatching { file(context).takeIf { it.exists() }?.readText().orEmpty() }.getOrElse { "读取失败：$it" }
   }
-  fun clear(context: Context? = null): Boolean {
-    val ctx = context ?: return false
-    val snapshot = root()
-    if (snapshot.startsWith("Root 操作失败") || snapshot.startsWith("Root 读取失败")) return false
-    return ctx.getSharedPreferences("diagnostic_clear", 0).edit().putString("snapshot", snapshot).commit()
+  fun clear(context: Context? = null): Boolean = synchronized(lock) {
+    if (context == null) false else runCatching { val f = file(context); !f.exists() || f.delete() }.getOrDefault(false)
   }
 }
