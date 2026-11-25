@@ -35,15 +35,18 @@
             android:name=".DiagnosticsProvider"
             android:authorities="org.matrix.chromext.diagnostics"
             android:exported="true" />
-        <activity
-            android:name=".DiagnosticsActivity"
-            android:label="ChromeXt 诊断日志"
-            android:exported="true">
+        <provider android:name=".ScriptPolicyProvider"
+            android:authorities="org.matrix.chromext.scriptpolicy"
+            android:exported="true" />
+        <activity android:name=".ScriptManagerActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".DiagnosticsActivity"
+            android:label="ChromeXt 诊断日志" android:exported="false" />
         <activity
             android:name=".OpenInChrome"
             android:label="@string/view_in_chrome"
