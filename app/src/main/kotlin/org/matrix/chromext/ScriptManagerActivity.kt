@@ -166,7 +166,7 @@ class ScriptManagerActivity : Activity() {
     outState.putBoolean("exportPending", exportData != null)
   }
   private fun chooseImport() {
-    AlertDialog.Builder(this).setTitle("导入脚本")
+    AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("导入脚本")
       .setItems(arrayOf("网址导入","本地文件（支持多选）")) { _,i ->
         if (i == 0) importDialog() else startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
           addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true)
@@ -177,7 +177,7 @@ class ScriptManagerActivity : Activity() {
     val items = ids()
     if (items.isEmpty()) { Toast.makeText(this,"暂无可导出的脚本",Toast.LENGTH_SHORT).show(); return }
     val selected = BooleanArray(items.size)
-    val dialog = AlertDialog.Builder(this).setTitle("选择导出脚本")
+    val dialog = AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("选择导出脚本")
       .setMultiChoiceItems(items.map { it.substringAfterLast(':') }.toTypedArray(),selected) { _,i,v -> selected[i]=v }
       .setNeutralButton("全选",null).setNegativeButton("取消",null)
       .setPositiveButton("导出",null).create()
@@ -262,7 +262,7 @@ class ScriptManagerActivity : Activity() {
         val items = candidates.keys.toList()
         if(items.isEmpty()) { Toast.makeText(this,"没有可导入的新脚本，跳过 $skipped 项",Toast.LENGTH_LONG).show(); return@runOnUiThread }
         val selected = BooleanArray(items.size) { true }
-        AlertDialog.Builder(this).setTitle("选择导入脚本（跳过 $skipped 项）")
+        AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("选择导入脚本（跳过 $skipped 项）")
           .setMultiChoiceItems(items.toTypedArray(),selected) { _,i,v -> selected[i]=v }
           .setNegativeButton("取消",null).setPositiveButton("导入（默认不启用）") { _,_ ->
             val edit = prefs.edit(); var count = 0
@@ -279,8 +279,8 @@ class ScriptManagerActivity : Activity() {
   }
 
   private fun importDialog() {
-    val input = EditText(this).apply { hint = "脚本链接或目标网站"; setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
-    AlertDialog.Builder(this).setTitle("导入脚本").setView(input)
+    val input = EditText(android.view.ContextThemeWrapper(this,R.style.ScriptHubDialog)).apply { background=panel(soft,14); setTextColor(ink); setHintTextColor(muted); setPadding(dp(14),dp(12),dp(14),dp(12)); hint = "脚本链接或目标网站"; setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
+    AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("网址导入").setView(column().apply { setPadding(dp(24),dp(12),dp(24),dp(8)); addView(input,LinearLayout.LayoutParams(-1,-2)) })
       .setMessage("支持 .user.js、Greasy Fork、ScriptCat、GitHub 链接；普通网站可搜索适用脚本。")
       .setNegativeButton("取消",null).setNeutralButton("搜索脚本") { _,_ -> searchSite(input.text.toString()) }
       .setPositiveButton("解析并导入") { _,_ -> downloadScript(input.text.toString()) }.show()
@@ -314,7 +314,7 @@ class ScriptManagerActivity : Activity() {
       else -> null
     }
     if (target == null) { searchSite(raw); return }
-    val progress = AlertDialog.Builder(this).setMessage("正在下载脚本…").setCancelable(false).show()
+    val progress = AlertDialog.Builder(this,R.style.ScriptHubDialog).setMessage("正在下载脚本…").setCancelable(false).show()
     Thread {
       val result = runCatching {
         var url = java.net.URL(target)
@@ -351,7 +351,7 @@ class ScriptManagerActivity : Activity() {
         progress.dismiss()
         result.onSuccess { previewImport(it) }.onFailure {
           org.matrix.chromext.utils.LogRecorder.writeLocal(this,"ERROR","[CX-IMPORT] "+it.javaClass.simpleName+": "+it.message)
-          AlertDialog.Builder(this).setTitle("导入失败").setMessage(it.message).setPositiveButton("关闭",null).show()
+          AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("导入失败").setMessage(it.message).setPositiveButton("关闭",null).show()
         }
       }
     }.start()
@@ -364,23 +364,23 @@ class ScriptManagerActivity : Activity() {
     fun field(key: String, fallback: String) = metadata.lastOrNull { it.first == key }?.second ?: fallback
     val matches = metadata.filter { it.first == "match" || it.first == "include" }.map { it.second }
     if (header == null || matches.isEmpty()) {
-      AlertDialog.Builder(this).setTitle("无效脚本").setMessage("缺少用户脚本元数据或匹配规则").setPositiveButton("关闭",null).show(); return
+      AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("无效脚本").setMessage("缺少用户脚本元数据或匹配规则").setPositiveButton("关闭",null).show(); return
     }
     val name = field("name","sample").replace(":","")
     val id = field("namespace","ChromeXt")+":"+name
     if (prefs.contains("source:$id")) {
-      AlertDialog.Builder(this).setTitle("脚本已存在").setMessage("当前同步机制不支持可靠覆盖更新，请管理已有脚本。").setPositiveButton("关闭",null).show(); return
+      AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("脚本已存在").setMessage("当前同步机制不支持可靠覆盖更新，请管理已有脚本。").setPositiveButton("关闭",null).show(); return
     }
     val targets = browsers()
     val selected = BooleanArray(targets.size)
     val grants = metadata.filter { it.first == "grant" }.joinToString("\n") { it.second }
-    AlertDialog.Builder(this).setTitle(name+" · "+field("version","未知版本"))
+    AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle(name+" · "+field("version","未知版本"))
       .setMessage("匹配规则：\n"+matches.joinToString("\n")+"\n\n声明权限：\n"+grants.ifBlank { "无" }+"\n\n仅导入可信脚本。")
       .setNeutralButton("查看源码") { _,_ ->
         val view = TextView(this).apply { text = source; setTextIsSelectable(true) }
-        AlertDialog.Builder(this).setTitle("脚本源码").setView(ScrollView(this).apply { addView(view) }).setPositiveButton("返回") { _,_ -> previewImport(source) }.show()
+        AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("脚本源码").setView(ScrollView(this).apply { addView(view) }).setPositiveButton("返回") { _,_ -> previewImport(source) }.show()
       }.setNegativeButton("取消",null).setPositiveButton("选择浏览器") { _,_ ->
-        AlertDialog.Builder(this).setTitle("分配浏览器（可稍后设置）")
+        AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("分配浏览器（可稍后设置）")
           .setMultiChoiceItems(targets.map { browserName(it) }.toTypedArray(),selected) { _,i,checked -> selected[i]=checked }
           .setNegativeButton("取消",null).setPositiveButton("确认导入") { _,_ ->
             val edit = prefs.edit().putString("source:$id",source)
