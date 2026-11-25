@@ -15,11 +15,11 @@ import org.json.JSONArray
 
 class ScriptManagerActivity : Activity() {
   private lateinit var list: LinearLayout
-  private lateinit var summary: TextView
+  private val stats = mutableListOf<TextView>()
   private lateinit var search: EditText
   private val prefs by lazy { getSharedPreferences("script_policy", 0) }
   private var browserTab = false
-  private val navButtons = mutableListOf<Button>()
+  private val navButtons = mutableListOf<LinearLayout>()
   private val canvasColor get() = Color.parseColor(if(dark) "#101625" else "#F3F5FB")
   private val soft get() = Color.parseColor(if(dark) "#263653" else "#E8EEFF")
   private val dark get() = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
@@ -37,11 +37,43 @@ class ScriptManagerActivity : Activity() {
   }
   private fun action(value: String, run: () -> Unit) = Button(this).apply {
     text = value; isAllCaps = false; textSize = 14f; setTextColor(accent)
+    stateListAnimator=null; backgroundTintList=null
     background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22345DC5),panel(soft,12),null)
     minHeight = dp(44); minimumHeight = dp(44); setPadding(dp(12),dp(8),dp(12),dp(8))
     layoutParams = LinearLayout.LayoutParams(-1,-2).apply { topMargin = dp(8); bottomMargin = dp(4) }
     setOnClickListener { run() }
   }
+
+  private inner class Glyph(private val kind: String, private val color: Int): android.graphics.drawable.Drawable() {
+    private val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+      this.color=this@Glyph.color; style=android.graphics.Paint.Style.STROKE; strokeWidth=1.8f
+      strokeCap=android.graphics.Paint.Cap.ROUND; strokeJoin=android.graphics.Paint.Join.ROUND
+    }
+    override fun getIntrinsicWidth()=dp(22)
+    override fun getIntrinsicHeight()=dp(22)
+    override fun setAlpha(alpha: Int) { paint.alpha=alpha; invalidateSelf() }
+    override fun setColorFilter(filter: android.graphics.ColorFilter?) { paint.colorFilter=filter; invalidateSelf() }
+    override fun getOpacity()=android.graphics.PixelFormat.TRANSLUCENT
+    override fun draw(c: android.graphics.Canvas) {
+      c.save(); c.translate(bounds.left.toFloat(),bounds.top.toFloat()); c.scale(bounds.width()/24f,bounds.height()/24f)
+      fun line(x:Float,y:Float,a:Float,b:Float)=c.drawLine(x,y,a,b,paint)
+      when(kind) {
+        "search" -> { c.drawCircle(10f,10f,6f,paint); line(14.5f,14.5f,20f,20f) }
+        "globe" -> { c.drawCircle(12f,12f,9f,paint); c.drawOval(8f,3f,16f,21f,paint); line(3f,12f,21f,12f) }
+        "refresh" -> { c.drawArc(4f,4f,20f,20f,35f,295f,false,paint); line(20f,4f,20f,10f); line(20f,10f,14f,10f) }
+        "download","upload" -> {
+          val down=kind=="download"; val y=if(down) 15f else 3f; val base=if(down) 9f else 9f
+          line(12f,3f,12f,15f); line(6f,base,12f,y); line(18f,base,12f,y)
+          line(4f,16f,4f,21f); line(4f,21f,20f,21f); line(20f,21f,20f,16f)
+        }
+        else -> { c.drawRoundRect(5f,3f,19f,21f,2f,2f,paint)
+          if(kind=="file") { line(10f,9f,7f,12f); line(7f,12f,10f,15f); line(14f,9f,17f,12f); line(17f,12f,14f,15f) }
+          else { line(8f,8f,16f,8f); line(8f,12f,16f,12f); line(8f,16f,14f,16f) }
+        }
+      }; c.restore()
+    }
+  }
+
   private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
   private fun card(): LinearLayout = column().apply {
     background = panel(surface,20); setPadding(dp(18),dp(18),dp(18),dp(18))
@@ -69,13 +101,26 @@ class ScriptManagerActivity : Activity() {
       addView(label("v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) })
     })
     root.addView(View(this),LinearLayout.LayoutParams(1,dp(14)))
-    summary = label("",15f,true)
-    root.addView(card().apply { background=panel(soft,20); addView(label("脚本库概览",12f,true)); addView(summary); addView(label("配置将在下次页面注入时生效",12f)) })
+    root.addView(card().apply {
+      background=panel(soft,20)
+      addView(label("脚本库概览",12f,true))
+      addView(LinearLayout(this@ScriptManagerActivity).apply {
+        setPadding(0,dp(8),0,dp(4))
+        for(name in listOf("脚本","浏览器","已启用")) {
+          addView(column().apply {
+            val number=label("0",28f,true).apply { setTextColor(accent) }
+            stats.add(number); addView(number); addView(label(name,12f))
+          },LinearLayout.LayoutParams(0,-2,1f))
+        }
+      })
+    })
     search = EditText(this).apply { hint = "搜索脚本或浏览器"; setSingleLine(true); textSize = 15f; setTextColor(ink); setHintTextColor(muted); background=panel(surface,14); setPadding(dp(16),dp(12),dp(16),dp(12)); minHeight=dp(48) }
+    search.setCompoundDrawablesWithIntrinsicBounds(Glyph("search",muted),null,null,null)
+    search.compoundDrawablePadding=dp(10)
     root.addView(search)
     root.addView(LinearLayout(this).apply {
-      addView(action("↓  导入脚本") { chooseImport() }.apply { setTextColor(Color.WHITE); background=panel(Color.parseColor("#345DC5"),14) },LinearLayout.LayoutParams(0,dp(48),1f).apply { rightMargin=dp(6); topMargin=dp(10); bottomMargin=dp(12) })
-      addView(action("↑  导出脚本") { selectExport() },LinearLayout.LayoutParams(0,dp(48),1f).apply { leftMargin=dp(6); topMargin=dp(10); bottomMargin=dp(12) })
+      addView(action("导入脚本") { chooseImport() }.apply { setTextColor(Color.WHITE); background=panel(Color.parseColor("#345DC5"),14); setCompoundDrawablesWithIntrinsicBounds(Glyph("download",Color.WHITE),null,null,null); compoundDrawablePadding=dp(4) },LinearLayout.LayoutParams(0,dp(48),1f).apply { rightMargin=dp(6); topMargin=dp(10); bottomMargin=dp(12) })
+      addView(action("导出脚本") { selectExport() }.apply { setCompoundDrawablesWithIntrinsicBounds(Glyph("upload",accent),null,null,null); compoundDrawablePadding=dp(4) },LinearLayout.LayoutParams(0,dp(48),1f).apply { leftMargin=dp(6); topMargin=dp(10); bottomMargin=dp(12) })
     })
     search.addTextChangedListener(object : android.text.TextWatcher {
       override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -85,11 +130,20 @@ class ScriptManagerActivity : Activity() {
     list = column()
     root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1,0,1f))
     val nav = LinearLayout(this).apply { background=panel(surface,20); setPadding(dp(4),dp(6),dp(4),dp(6)) }
-    fun tab(name: String, run: () -> Unit) { val b=action(name,run); navButtons.add(b); nav.addView(b,LinearLayout.LayoutParams(0,dp(48),1f).apply { leftMargin=dp(2); rightMargin=dp(2) }) }
-    tab("脚本") { browserTab = false; refresh() }
-    tab("浏览器") { browserTab = true; refresh() }
-    tab("日志") { startActivity(Intent(this,DiagnosticsActivity::class.java)) }
-    tab("刷新") { refresh() }
+    fun tab(name: String, glyph: String, run: () -> Unit) {
+      val item=column().apply {
+        gravity=android.view.Gravity.CENTER; isClickable=true; isFocusable=true
+        contentDescription=name
+        addView(ImageView(this@ScriptManagerActivity).apply { setImageDrawable(Glyph(glyph,muted)) },LinearLayout.LayoutParams(dp(22),dp(22)))
+        addView(label(name,11f).apply { gravity=android.view.Gravity.CENTER },LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(3) })
+        setOnClickListener { run() }
+      }
+      navButtons.add(item); nav.addView(item,LinearLayout.LayoutParams(0,dp(56),1f).apply { leftMargin=dp(2); rightMargin=dp(2) })
+    }
+    tab("脚本","file") { browserTab = false; refresh() }
+    tab("浏览器","globe") { browserTab = true; refresh() }
+    tab("日志","log") { startActivity(Intent(this,DiagnosticsActivity::class.java)) }
+    tab("刷新","refresh") { refresh() }
     root.addView(nav)
     setContentView(root)
     if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -362,12 +416,20 @@ class ScriptManagerActivity : Activity() {
   private fun ids() = prefs.all.keys.filter { it.startsWith("source:") }.map { it.removePrefix("source:") }.sorted()
   private fun updateSummary() {
     val ids = ids(); val browsers = browsers()
-    summary.text = "${ids.size} 个脚本   ·   ${browsers.size} 个浏览器   ·   ${ids.count { id -> browsers.any { enabled(it,id) } }} 已启用"
+    val counts=listOf(ids.size,browsers.size,ids.count { id -> browsers.any { enabled(it,id) } })
+    stats.forEachIndexed { i,v -> v.text=counts[i].toString() }
   }
   private fun refresh() {
     if (!::list.isInitialized) return
     list.removeAllViews()
-    navButtons.forEachIndexed { i,b -> val active=i==(if(browserTab) 1 else 0); b.background=panel(if(active) soft else surface,14); b.setTextColor(if(active) accent else muted) }
+    navButtons.forEachIndexed { i,b ->
+      val active=i==(if(browserTab) 1 else 0)
+      val color=if(active) accent else muted
+      b.background=panel(if(active) soft else surface,14)
+      (b.getChildAt(0) as ImageView).setImageDrawable(Glyph(listOf("file","globe","log","refresh")[i],color))
+      (b.getChildAt(1) as TextView).setTextColor(color)
+      b.isSelected=active
+    }
     val browsers = browsers(); val ids = ids()
     updateSummary()
     val q = search.text.toString().trim()
