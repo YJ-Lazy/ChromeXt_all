@@ -23,8 +23,52 @@ class ScriptPolicyProvider : ContentProvider() {
   }
 
   companion object {
+  const val MAX_SOURCE = 5 * 1024 * 1024
+  private const val CHUNK = 32768
+  @Synchronized
   internal fun syncPolicy(ctx: android.content.Context, pkg: String, extras: Bundle?): Bundle {
     val prefs = ctx.getSharedPreferences("script_policy", 0)
+    val op = extras?.getString("op")
+    if (op != null) {
+      val id = requireNotNull(extras.getString("id"))
+      require(id.length <= 2048)
+      val key = "source:$id"
+      val offset = extras.getInt("offset")
+      require(offset >= 0)
+      return when(op) {
+        "has" -> Bundle().apply { putBoolean("exists",prefs.contains(key)) }
+        "read" -> {
+          require(prefs.getBoolean("assigned:$pkg:$id",false))
+          val source = requireNotNull(prefs.getString(key,null))
+          require(offset <= source.length)
+          Bundle().apply { putString("chunk",source.substring(offset,minOf(source.length,offset+CHUNK))); putInt("length",source.length) }
+        }
+        "write" -> {
+          if (!prefs.contains(key)) {
+            val chunk = requireNotNull(extras.getString("chunk"))
+            require(chunk.length <= CHUNK)
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest((pkg+"\u0000"+id).toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+            val file = java.io.File(ctx.cacheDir,"script-upload-$digest")
+            // Store UTF-16 code units to preserve surrogate pairs across chunk boundaries.
+            java.io.RandomAccessFile(file,"rw").use { out ->
+              if(offset==0) out.setLength(0)
+              require(out.length()==offset.toLong()*2)
+              require(offset+chunk.length <= MAX_SOURCE)
+              out.seek(out.length()); out.writeChars(chunk)
+              if(extras.getBoolean("last")) {
+                out.seek(0)
+                val source=CharArray((out.length()/2).toInt()) { out.readChar() }.concatToString()
+                require(source.toByteArray(Charsets.UTF_8).size <= MAX_SOURCE)
+                prefs.edit().putString(key,source).apply()
+              }
+            }
+            if(extras.getBoolean("last")) file.delete()
+          }
+          Bundle.EMPTY
+        }
+        else -> throw IllegalArgumentException("Unknown script operation")
+      }
+    }
     val ids = JSONArray(extras?.getString("ids") ?: "[]")
     require(ids.length() <= 5000)
     val disabled = JSONArray()
@@ -38,12 +82,16 @@ class ScriptPolicyProvider : ContentProvider() {
     }
     edit.apply()
     val assigned = JSONObject()
+    val assignedIds = JSONArray()
     for ((key, value) in prefs.all) {
       if (!key.startsWith("assigned:$pkg:") || value != true) continue
       val id = key.removePrefix("assigned:$pkg:")
       if ((0 until ids.length()).any { ids.getString(it) == id }) continue
       val source = prefs.getString("source:$id", null) ?: continue
-      if (assigned.toString().length + source.length < 200000) {
+      if (extras?.getBoolean("chunked") == true) {
+        assignedIds.put(id)
+        if (!prefs.getBoolean("enabled:$pkg:$id", true)) disabled.put(id)
+      } else if (assigned.toString().length + source.length < 200000) {
         assigned.put(id, source)
         if (!prefs.getBoolean("enabled:$pkg:$id", true)) disabled.put(id)
       }
@@ -53,7 +101,7 @@ class ScriptPolicyProvider : ContentProvider() {
       if (!prefs.getBoolean("enabled:$pkg:$id", true)) disabled.put(id)
     }
     prefs.edit().putString("inventory:$pkg", ids.toString()).apply()
-    return Bundle().apply { putString("disabled", disabled.toString()); putString("assigned", assigned.toString()) }
+    return Bundle().apply { putString("disabled", disabled.toString()); putString("assigned", assigned.toString()); putString("assignedIds", assignedIds.toString()) }
   }
   }
   override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
@@ -66,23 +114,49 @@ class ScriptPolicyProvider : ContentProvider() {
 object ScriptPolicy {
   fun disabled(scripts: List<org.matrix.chromext.script.Script>, accept: (String, String) -> Unit): Set<String> = runCatching {
     val ids = scripts.map { it.id }
-    val sources = JSONObject()
-    for (script in scripts) {
-      val source = script.meta + script.code
-      if (sources.toString().length + source.length < 200000) sources.put(script.id, source)
-    }
-    val request = Bundle().apply { putString("ids", JSONArray(ids).toString()); putString("sources", sources.toString()) }
     val resolver = Chrome.getContext().contentResolver
-    // The diagnostics authority is already used by both host browsers.
-    // Both endpoints enforce caller identity; do not run scripts on an unverified policy.
-    val result = try {
-      requireNotNull(resolver.call(
-          Uri.parse("content://org.matrix.chromext.diagnostics"), "sync_policy", null, request))
+    fun call(request: Bundle): Bundle = try {
+      requireNotNull(resolver.call(Uri.parse("content://org.matrix.chromext.diagnostics"), "sync_policy", null, request))
     } catch (e: IllegalArgumentException) {
-      requireNotNull(resolver.call(
-          Uri.parse("content://org.matrix.chromext.scriptpolicy"), "sync", null, request))
+      requireNotNull(resolver.call(Uri.parse("content://org.matrix.chromext.scriptpolicy"), "sync", null, request))
     }
-    val assigned = JSONObject(requireNotNull(result?.getString("assigned")))
+    fun operation(op:String,id:String,offset:Int=0)=Bundle().apply {
+      putString("op",op); putString("id",id); putInt("offset",offset)
+    }
+    for(script in scripts) {
+      runCatching {
+        val source=script.meta+script.code
+        if(source.toByteArray(Charsets.UTF_8).size <= ScriptPolicyProvider.MAX_SOURCE &&
+          !call(operation("has",script.id)).getBoolean("exists")) {
+          var offset=0
+          while(offset<source.length) {
+            val end=minOf(offset+32768,source.length)
+            call(operation("write",script.id,offset).apply {
+              putString("chunk",source.substring(offset,end)); putBoolean("last",end==source.length)
+            })
+            offset=end
+          }
+        }
+      }.onFailure { org.matrix.chromext.utils.Log.ex(it,"[CX-SYNC] source upload failed") }
+    }
+    val result=call(Bundle().apply { putString("ids",JSONArray(ids).toString()); putBoolean("chunked",true) })
+    val assigned = JSONObject(requireNotNull(result.getString("assigned")))
+    val pending = JSONArray(result.getString("assignedIds") ?: "[]")
+    for(i in 0 until pending.length()) {
+      val id=pending.getString(i)
+      runCatching {
+        val source=StringBuilder()
+        do {
+          val part=call(operation("read",id,source.length))
+          val length=part.getInt("length")
+          require(length in 1..ScriptPolicyProvider.MAX_SOURCE)
+          val chunk=requireNotNull(part.getString("chunk"))
+          require(chunk.isNotEmpty() && source.length+chunk.length<=length)
+          source.append(chunk)
+        } while(source.length<length)
+        accept(id,source.toString())
+      }.onFailure { org.matrix.chromext.utils.Log.ex(it,"[CX-SYNC] source download failed") }
+    }
     val array = JSONArray(requireNotNull(result.getString("disabled")))
     for (id in assigned.keys()) accept(id, assigned.getString(id))
     org.matrix.chromext.utils.Log.d("[CX-POLICY] sync acknowledged")
