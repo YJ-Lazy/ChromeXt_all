@@ -57,6 +57,22 @@ object LogRecorder {
   fun read(context: Context? = null): String = synchronized(lock) {
     if (context == null) "" else runCatching { file(context).takeIf { it.exists() }?.readText().orEmpty() }.getOrElse { "读取失败：$it" }
   }
+  fun readRoot(context: Context): String {
+    val local = read(context)
+    val output = File.createTempFile("root-diagnostics-", ".txt", context.cacheDir)
+    try {
+      val command = "echo '--- ChromeXt Logcat ---'; logcat -d -t 5000 -v threadtime -s CXDiagnostics:V; echo '--- LSPosed module logs ---'; for f in /data/adb/lspd/log/modules*.log; do [ -f \"$f\" ] && grep -F org.matrix.chromext \"$f\" | tail -n 1000; done"
+      val process = ProcessBuilder("su", "-c", command).redirectErrorStream(true).redirectOutput(output).start()
+      if (!process.waitFor(45, TimeUnit.SECONDS)) {
+        process.destroyForcibly()
+        return local + "\nRoot 读取超时"
+      }
+      val extra = output.inputStream().bufferedReader().use { it.readText().takeLast(500000) }
+      return "--- 模块独立日志 ---\n" + local + "\n" + (if (process.exitValue() == 0) extra else "Root 读取失败或部分不可用：\n$extra")
+    } catch (e: Exception) {
+      return local + "\nRoot 读取失败：${e.message}"
+    } finally { output.delete() }
+  }
   fun clear(context: Context? = null): Boolean = synchronized(lock) {
     if (context == null) false else runCatching { val f = file(context); !f.exists() || f.delete() }.getOrDefault(false)
   }
