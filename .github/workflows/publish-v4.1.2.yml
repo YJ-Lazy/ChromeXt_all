@@ -1,0 +1,38 @@
+name: Publish v4.1.2
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/publish-v4.1.2.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build APK
+        run: ./gradlew app:assembleDebug
+      - name: Validate release build
+        run: ./gradlew app:assembleRelease
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grep -q 'versionName = "4.1.2"' app/build.gradle.kts
+          cp app/build/outputs/apk/debug/app-debug.apk ScriptHub-v4.1.2.apk
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify ScriptHub-v4.1.2.apk
+          gh release create v4.1.2 ScriptHub-v4.1.2.apk --target "$GITHUB_SHA" --title "ScriptHub v4.1.2" --latest --notes-file - <<'NOTES'
+          ## 更新内容
+          - 重绘主界面，新增三栏统计及图标导航
+          - 统一蓝紫色主题、搜索框、按钮和脚本卡片
+          - 优化浏览器图标、开关及状态栏对比度
+          - 保留批量导入导出和日志功能
+          
+          本次发布 Debug 签名 APK。不同构建的签名可能不同，覆盖安装失败时请先备份数据。其他浏览器及新增导入功能仍需真机验证。
+          NOTES
