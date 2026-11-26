@@ -8,13 +8,12 @@ import kotlin.text.Regex
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
 
-private val blocksReg =
-    Regex(
-        """(?<metablock>[\S\s]*?// ==UserScript==\r?\n[\S\s]*?\r?\n// ==/UserScript==\s+)(?<code>[\S\s]*)""")
-private val metaReg = Regex("""^//\s+@(?<key>[\w-]+)(\s+(?<value>.+))?""")
+private val blocksReg = Regex("""(?m)^[ \t]*//[ \t]*==UserScript==[ \t]*\r?\n[\s\S]*?^[ \t]*//[ \t]*==/UserScript==[ \t]*(?:\r?\n|$)""")
+private val metaReg = Regex("""^[ \t]*//[ \t]*@(?<key>[\w:-]+)(?:[ \t]+(?<value>.*?))?[ \t]*$""")
 
 fun parseScript(input: String, storage: String? = null): Script? {
-  val blockMatchGroup = blocksReg.matchEntire(input)?.groups
+  val normalized = input.removePrefix("\uFEFF")
+  val blockMatchGroup = blocksReg.find(normalized)
   if (blockMatchGroup == null) {
     return null
   }
@@ -27,24 +26,24 @@ fun parseScript(input: String, storage: String? = null): Script? {
         var grant = mutableListOf<String>()
         var exclude = mutableListOf<String>()
         var require = mutableListOf<String>()
-        val meta = (blockMatchGroup[1]?.value as String)
-        val code = blockMatchGroup[2]?.value as String
+        val meta = blockMatchGroup.value
+        val code = normalized.substring(blockMatchGroup.range.last + 1)
         var storage: JSONObject? = null
         var noframes = false
       }
   script.meta.split("\n").forEach {
-    val metaMatchGroup = metaReg.matchEntire(it)?.groups
+    val metaMatchGroup = metaReg.matchEntire(it.trimEnd('\r'))?.groups
     if (metaMatchGroup != null) {
       val key = metaMatchGroup[1]?.value as String
       if (metaMatchGroup[2] != null) {
-        val value = metaMatchGroup[3]?.value as String
+        val value = metaMatchGroup[2]!!.value.trim()
         when (key) {
           "name" -> script.name = value.replace(":", "")
           "namespace" -> script.namespace = value
           "match" -> script.match.add(value)
           "include" -> script.match.add(value)
           "grant" -> script.grant.add(value)
-          "exclude" -> script.exclude.add(value)
+          "exclude", "exclude-match" -> script.exclude.add(value)
           "require" -> script.require.add(value)
           "noframes" -> script.noframes = true
         }
@@ -97,7 +96,7 @@ private fun downloadLib(libUrl: String): String {
     val type = chunks.removeFirst()
     val data = Uri.decode(chunks.joinToString(""))
     if (type.endsWith("base64")) {
-      return Base64.decode(data, Base64.DEFAULT).toString()
+      return Base64.decode(data, Base64.DEFAULT).toString(Charsets.UTF_8)
     } else {
       return data
     }
