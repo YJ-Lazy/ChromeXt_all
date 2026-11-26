@@ -282,7 +282,13 @@ class ScriptManagerActivity : Activity() {
     val input = EditText(android.view.ContextThemeWrapper(this,R.style.ScriptHubDialog)).apply { background=panel(soft,14); setTextColor(ink); setHintTextColor(muted); setPadding(dp(14),dp(12),dp(14),dp(12)); hint = "脚本链接或目标网站"; setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
     AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("网址导入").setView(column().apply { setPadding(dp(24),dp(12),dp(24),dp(8)); addView(input,LinearLayout.LayoutParams(-1,-2)) })
       .setMessage("支持 .user.js、Greasy Fork、Sleazy Fork、ScriptCat、GitHub、GitLab、Gist 及自定义 HTTPS 源码链接；普通网站可搜索适用脚本。")
-      .setNegativeButton("取消",null).setNeutralButton("搜索脚本") { _,_ -> searchSite(input.text.toString()) }
+      .setNegativeButton("取消",null).setNeutralButton("粘贴源码") { _,_ ->
+        val source=EditText(this).apply { minLines=5; hint="// ==UserScript=="; inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE }
+        AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("粘贴脚本源码").setView(source).setNegativeButton("取消",null).setPositiveButton("导入") { _,_ ->
+          val value=source.text.toString().removePrefix("\uFEFF")
+          if(value.toByteArray(Charsets.UTF_8).size<=ScriptPolicyProvider.MAX_SOURCE) previewImport(value) else Toast.makeText(this,"脚本超过 5 MiB",Toast.LENGTH_LONG).show()
+        }.show()
+      }
       .setPositiveButton("解析并导入") { _,_ -> downloadScript(input.text.toString()) }.show()
   }
   private fun searchSite(value: String) {
@@ -294,6 +300,7 @@ class ScriptManagerActivity : Activity() {
   }
   private fun downloadScript(value: String) {
     val raw = value.trim()
+    if(raw.startsWith("// ==UserScript==")) { previewImport(raw); return }
     val uri = android.net.Uri.parse(if (raw.contains("://")) raw else "https://$raw")
     val host = uri.host.orEmpty().lowercase()
     val parts = uri.pathSegments
