@@ -223,8 +223,8 @@ object QuarkBridge {
   }
 
   fun installCurrent(view: View, url: String) {
-    if (!isUserScript(url) || !current(view, url)) return
-    val code = "(function(){${urlGuard(url)}return document.body ? JSON.stringify({source:document.body.innerText}) : null;})();"
+    if (!eligible(url) || !current(view, url)) return
+    val code = "(function(){${urlGuard(url)}return document.body ? JSON.stringify({source:(document.querySelector("pre") || document.body).textContent}) : null;})();"
     evaluate(view, code) { raw ->
       if (!current(view, url)) return@evaluate
       val value = decode(raw)
