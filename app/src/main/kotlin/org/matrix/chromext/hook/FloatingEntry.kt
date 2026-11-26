@@ -80,9 +80,7 @@ object FloatingEntryHook : BaseHook() {
     Log.d("Quark floating menu opened; url=$safeUrl; userscript=${isUserScript(url)}")
     val menu = PopupMenu(anchor.context, anchor)
     menu.menu.add(0, MENU_MANAGE, 0, "脚本管理")
-    if (isUserScript(url)) {
-      menu.menu.add(0, MENU_INSTALL, 1, "安装当前脚本")
-    }
+    menu.menu.add(0, MENU_INSTALL, 1, "安装当前脚本")
     menu.menu.add(0, MENU_CONSOLE, 2, "开发者控制台")
     menu.menu.add(0, MENU_TEST, 3, "JavaScript 执行测试")
     menu.menu.add(0, MENU_WEB_MANAGE, 4, "网页脚本管理")
