@@ -281,7 +281,7 @@ class ScriptManagerActivity : Activity() {
   private fun importDialog() {
     val input = EditText(android.view.ContextThemeWrapper(this,R.style.ScriptHubDialog)).apply { background=panel(soft,14); setTextColor(ink); setHintTextColor(muted); setPadding(dp(14),dp(12),dp(14),dp(12)); hint = "脚本链接或目标网站"; setSingleLine(true); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI }
     AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("网址导入").setView(column().apply { setPadding(dp(24),dp(12),dp(24),dp(8)); addView(input,LinearLayout.LayoutParams(-1,-2)) })
-      .setMessage("支持 .user.js、Greasy Fork、ScriptCat、GitHub 链接；普通网站可搜索适用脚本。")
+      .setMessage("支持 .user.js、Greasy Fork、Sleazy Fork、ScriptCat、GitHub、GitLab、Gist 及自定义 HTTPS 源码链接；普通网站可搜索适用脚本。")
       .setNegativeButton("取消",null).setNeutralButton("搜索脚本") { _,_ -> searchSite(input.text.toString()) }
       .setPositiveButton("解析并导入") { _,_ -> downloadScript(input.text.toString()) }.show()
   }
@@ -297,61 +297,91 @@ class ScriptManagerActivity : Activity() {
     val uri = android.net.Uri.parse(if (raw.contains("://")) raw else "https://$raw")
     val host = uri.host.orEmpty().lowercase()
     val parts = uri.pathSegments
-    val target = when {
-      host == "greasyfork.org" || host == "www.greasyfork.org" -> {
-        val i = parts.indexOf("scripts")
-        val id = parts.getOrNull(i+1)?.substringBefore('-')?.takeIf { i >= 0 && it.all(Char::isDigit) && it.isNotEmpty() }
-        if (id == null) null else "https://greasyfork.org/scripts/$id/code/script.user.js"
+    val targets = linkedSetOf<String>()
+    val fork = listOf("greasyfork.org","sleazyfork.org").firstOrNull { host==it || host=="www.$it" || host=="update.$it" }
+    val direct=uri.path.orEmpty().endsWith(".js",true)
+    if(direct) targets.add(uri.toString())
+    if(fork!=null) {
+      val i=parts.indexOf("scripts")
+      val id=parts.getOrNull(i+1)?.substringBefore('-')?.takeIf { i>=0 && it.isNotEmpty() && it.all(Char::isDigit) }
+      if(id!=null) {
+        targets.add("https://$fork/scripts/$id/code/script.user.js")
+        targets.add("https://update.$fork/scripts/$id/script.user.js")
       }
-      host == "scriptcat.org" -> {
-        val i = parts.indexOf("script")
-        val id = parts.getOrNull(i+1)?.takeIf { i >= 0 && it.isNotEmpty() && it.all(Char::isDigit) }
-        if (id == null) null else "https://scriptcat.org/scripts/code/$id/script.user.js"
-      }
-      host == "github.com" && parts.size >= 5 && parts[2] == "blob" ->
-        "https://raw.githubusercontent.com/" + (parts.take(2)+parts.drop(3)).joinToString("/") { android.net.Uri.encode(it) }
-      uri.path.orEmpty().endsWith(".js",true) || host == "raw.githubusercontent.com" || host == "update.greasyfork.org" -> uri.toString()
-      else -> null
+    } else if(host=="scriptcat.org" || host=="www.scriptcat.org") {
+      val i=parts.indexOf("script")
+      val id=parts.getOrNull(i+1)?.takeIf { i>=0 && it.isNotEmpty() && it.all(Char::isDigit) }
+      if(id!=null) targets.add("https://scriptcat.org/scripts/code/$id/script.user.js")
+    } else if(host=="github.com" && parts.size>=5 && parts[2] in listOf("blob","raw")) {
+      targets.clear()
+      targets.add("https://raw.githubusercontent.com/"+(parts.take(2)+parts.drop(3)).joinToString("/") { android.net.Uri.encode(it) })
+    } else if(host=="gitlab.com" && parts.contains("blob")) {
+      targets.clear()
+      targets.add(uri.toString().replace("/-/blob/","/-/raw/"))
+    } else if(host=="gist.github.com" && parts.size>=2 && !direct) {
+      targets.add("https://gist.githubusercontent.com/"+parts.take(2).joinToString("/") { android.net.Uri.encode(it) }+"/raw")
     }
-    if (target == null) { searchSite(raw); return }
+    if(targets.isEmpty()) targets.add(uri.toString())
     val progress = AlertDialog.Builder(this,R.style.ScriptHubDialog).setMessage("正在下载脚本…").setCancelable(false).show()
     Thread {
-      val result = runCatching {
-        var url = java.net.URL(target)
-        var source: String? = null
-        repeat(6) {
-          if (source != null) return@repeat
-          require(url.protocol == "https") { "仅支持 HTTPS 下载" }
-          val c = url.openConnection() as java.net.HttpURLConnection
+      fun fetch(target:String):String {
+        var url=java.net.URL(java.net.URI(target.replace(" ","%20")).toASCIIString())
+        repeat(8) {
+          require(url.protocol=="https" && url.userInfo==null) { "仅支持 HTTPS 下载" }
+          val conn=url.openConnection() as java.net.HttpURLConnection
           try {
-            c.instanceFollowRedirects = false; c.connectTimeout = 15000; c.readTimeout = 15000
-            val status = c.responseCode
-            if (status in 300..399) {
-              url = java.net.URL(url, requireNotNull(c.getHeaderField("Location")))
+            conn.instanceFollowRedirects=false
+            conn.connectTimeout=20000; conn.readTimeout=30000
+            conn.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36")
+            conn.setRequestProperty("Accept","application/javascript, text/javascript, text/plain, */*;q=0.5")
+            conn.setRequestProperty("Connection","close")
+            val status=conn.responseCode
+            if(status in listOf(301,302,303,307,308)) {
+              url=java.net.URL(url,requireNotNull(conn.getHeaderField("Location")))
             } else {
+              if(status==429 || status>=500) throw java.io.IOException("HTTP $status")
               require(status in 200..299) { "HTTP $status" }
-              val out = java.io.ByteArrayOutputStream()
-              c.inputStream.use { stream ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                  val n = stream.read(buffer)
-                  if (n < 0) break
-                  require(out.size()+n <= ScriptPolicyProvider.MAX_SOURCE) { "脚本超过当前同步大小限制" }
+              val out=java.io.ByteArrayOutputStream()
+              conn.inputStream.use { stream ->
+                val buffer=ByteArray(8192)
+                while(true) {
+                  val n=stream.read(buffer)
+                  if(n<0) break
+                  require(out.size()+n<=ScriptPolicyProvider.MAX_SOURCE) { "脚本超过 5 MiB" }
                   out.write(buffer,0,n)
                 }
               }
-              source = out.toString("UTF-8").removePrefix("\uFEFF")
+              val source=out.toString("UTF-8").removePrefix("\uFEFF")
+              require(source.contains("// ==UserScript==")) { "返回内容不是用户脚本（可能是网页或验证页面）" }
+              return source
             }
-          } finally { c.disconnect() }
+          } finally { conn.disconnect() }
         }
-        requireNotNull(source) { "重定向次数过多" }
+        error("重定向次数过多")
+      }
+      val result=runCatching {
+        var last:Exception?=null
+        var source:String?=null
+        for(target in targets) {
+          for(attempt in 0..1) {
+            try { source=fetch(target); break }
+            catch(e:Exception) {
+              last=e
+              org.matrix.chromext.utils.LogRecorder.writeLocal(this,"WARN","[CX-IMPORT] "+java.net.URL(target).host+" attempt="+(attempt+1)+" "+e.javaClass.simpleName+": "+e.message)
+              if(e !is java.io.IOException || e is javax.net.ssl.SSLHandshakeException) break
+              if(attempt==0) Thread.sleep(600)
+            }
+          }
+          if(source!=null) break
+        }
+        source ?: throw (last ?: java.io.IOException("下载失败"))
       }
       runOnUiThread {
         if (isFinishing || isDestroyed) return@runOnUiThread
         progress.dismiss()
         result.onSuccess { previewImport(it) }.onFailure {
           org.matrix.chromext.utils.LogRecorder.writeLocal(this,"ERROR","[CX-IMPORT] "+it.javaClass.simpleName+": "+it.message)
-          AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("导入失败").setMessage(it.message).setPositiveButton("关闭",null).show()
+          AlertDialog.Builder(this,R.style.ScriptHubDialog).setTitle("导入失败").setMessage((it.message ?: "未知错误")+"\n\n可重试，或使用浏览器下载后本地导入。").setNeutralButton("浏览器打开") { _,_ -> runCatching { startActivity(Intent(Intent.ACTION_VIEW,uri)) } }.setNegativeButton("关闭",null).setPositiveButton("重试") { _,_ -> downloadScript(raw) }.show()
         }
       }
     }.start()
