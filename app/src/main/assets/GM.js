@@ -448,6 +448,22 @@ function GM_getValue(key, default_value) {
 }
 // Kotlin separator
 
+function GM_getValues(keys) {
+  const defaults = Array.isArray(keys) ? Object.fromEntries(keys.map(k => [k, undefined])) : (keys || {});
+  return Object.fromEntries(Object.entries(defaults).map(([k,v]) => [k, Object.prototype.hasOwnProperty.call(GM_info.storage,k) ? GM_info.storage[k] : v]));
+}
+// Kotlin separator
+
+function GM_setValues(values) {
+  for (const [key,value] of Object.entries(values)) GM_info.storage[key] = value;
+}
+// Kotlin separator
+
+function GM_deleteValues(keys) {
+  for (const key of keys) delete GM_info.storage[key];
+}
+// Kotlin separator
+
 function GM_listValues() {
   return Object.keys(GM_info.storage);
 }
@@ -1053,7 +1069,7 @@ GM.bootstrap = () => {
   for (const it of [
     "include",
     "match",
-    "exlcude",
+    "exclude",
     "require",
     "grant",
     "connect",
@@ -1127,7 +1143,7 @@ GM.bootstrap = () => {
       },
     };
     if (grants.includes("unsafeWindow"))
-      handler.window.unsafeWindow = unsafeWindow;
+      handler.window.unsafeWindow = window;
     GM.globalThis = new Proxy(window, handler);
   }
 
@@ -1186,8 +1202,8 @@ GM.bootstrap = () => {
     },
   };
 
-  if (grants.includes("GM.getValue") || grants.includes("GM_getValue")) {
-    GM.getValue = storageHandler.async_get.bind(storageHandler);
+  if (grants.some(g => /^(GM[_.])(getValue|setValue|deleteValue|listValues|getValues|setValues|deleteValues|addValueChangeListener|removeValueChangeListener)$/.test(g))) {
+    if (grants.includes("GM.getValue")) GM.getValue = storageHandler.async_get.bind(storageHandler);
     ChromeXt.addEventListener("scriptStorage", (e) => {
       if (e.detail.id != GM_info.script.id) return;
       e.stopImmediatePropagation();
@@ -1198,7 +1214,8 @@ GM.bootstrap = () => {
         GM_info.valueListener.forEach((v) => {
           if (v.enabled == true && v.key == data.key) {
             v.listener(
-              GM_info.storage[data.key] || null,
+              data.key,
+              GM_info.storage[data.key],
               data.value,
               e.detail.uuid != GM_info.uuid
             );
@@ -1271,13 +1288,18 @@ GM.bootstrap = () => {
       meta.sync_code = meta.code;
       meta.code = async () => {
         for (const data of meta.resources) {
-          data.content = await GM_xmlhttpRequest({ url: data.url });
+          const response = await GM_xmlhttpRequest({ url: data.url });
+          data.content = response.responseText ?? response.response ?? "";
         }
         return meta.sync_code();
       };
     }
 
     switch (meta["run-at"]) {
+      case "document-body":
+        if (document.body) meta.code();
+        else window.addEventListener("DOMContentLoaded", meta.code, { once: true });
+        break;
       case "document-start":
         meta.code();
         break;
