@@ -26,10 +26,33 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/debug/app-debug.apk > /tmp/manifest.xml
           ! grep -F 'android:name="xposedmodule"' /tmp/manifest.xml
       - name: Prepare NDK and CMake
+        shell: bash
         run: |
-          sdkmanager 'ndk;29.0.14206865'
-          python3 -m pip install --upgrade cmake ninja
-          cmake --version
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::Android SDK root is not configured"
+            exit 1
+          fi
+          SDK_MANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDK_MANAGER" ]; then
+            SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+          if [ ! -x "$SDK_MANAGER" ]; then
+            echo "::error::Android SDK command-line tools not found under $SDK_ROOT"
+            exit 1
+          fi
+          NDK_ROOT="$SDK_ROOT/ndk/29.0.14206865"
+          if [ ! -f "$NDK_ROOT/build/cmake/android.toolchain.cmake" ]; then
+            "$SDK_MANAGER" --sdk_root="$SDK_ROOT" 'ndk;29.0.14206865'
+          fi
+          test -f "$NDK_ROOT/build/cmake/android.toolchain.cmake"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/chromext-build-tools"
+          "$RUNNER_TEMP/chromext-build-tools/bin/python" -m pip install 'cmake>=3.28,<4' 'ninja>=1.11,<2'
+          echo "$RUNNER_TEMP/chromext-build-tools/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/chromext-build-tools/bin/cmake" --version
+          "$RUNNER_TEMP/chromext-build-tools/bin/ninja" --version
       - name: Build Zygisk module
         run: bash zygisk/build.sh
       - name: Upload manager APK
