@@ -3,6 +3,8 @@
 [ "$API" -ge 27 ] || abort "! Android 8.1 or later required"
 [ -s "$MODPATH/payload/resources.bin" ] || abort "! Runtime resources missing"
 [ -f "$MODPATH/webroot/index.html" ] || abort "! WebUI missing"
+[ -f "$MODPATH/cx-snapshot" ] || abort "! Snapshot reader missing"
+chmod 755 "$MODPATH/cx-snapshot" "$MODPATH/scope.sh" "$MODPATH/library.sh" || abort "! Cannot set executable permissions"
 OLD=/data/adb/modules/chromext_zygisk
 for name in injection.list library.json; do
     if [ "$MODPATH" != "$OLD" ] && [ -f "$OLD/$name" ] && [ ! -L "$OLD/$name" ]; then
