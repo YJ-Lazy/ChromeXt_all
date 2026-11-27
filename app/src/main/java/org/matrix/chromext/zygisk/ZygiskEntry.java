@@ -17,6 +17,7 @@ public final class ZygiskEntry {
 
     public static boolean install(String process, byte[] resources, byte[] library) {
         try {
+            Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] Java entry reached: " + process);
             if (!XposedBridge.initialize()) {
                 Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] LSPlant initialization failed");
                 return false;
@@ -45,7 +46,9 @@ public final class ZygiskEntry {
                         org.matrix.chromext.ScriptPolicy.INSTANCE.initialize(library);
                         LogRecorder.INSTANCE.initialize(app);
                         org.matrix.chromext.utils.Log.INSTANCE.i("[CX-ZYGISK] standalone runtime; process=" + process);
+                        Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] BrowserRuntime load starting: " + process);
                         BrowserRuntime.INSTANCE.load(process, process, app.getClassLoader(), app);
+                        Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] BrowserRuntime load returned: " + process);
                     } catch (Throwable e) {
                         Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] standalone resource or browser initialization failed", e);
                     }

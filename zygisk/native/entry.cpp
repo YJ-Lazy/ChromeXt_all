@@ -107,7 +107,10 @@ bool readDexes(int dir) {
         }
         struct stat st{};
         if (fstat(fd, &st) != 0 || st.st_size < 112 || st.st_size > 32 * 1024 * 1024 ||
-            total + st.st_size > 64 * 1024 * 1024) { close(fd); return false; }
+            total + st.st_size > 64 * 1024 * 1024) {
+            __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] invalid DEX size: %s", name.c_str());
+            close(fd); return false;
+        }
         std::vector<unsigned char> bytes(static_cast<size_t>(st.st_size));
         size_t offset = 0;
         while (offset < bytes.size()) {
@@ -116,7 +119,10 @@ bool readDexes(int dir) {
             offset += static_cast<size_t>(n);
         }
         close(fd);
-        if (memcmp(bytes.data(), "dex\n", 4) != 0) return false;
+        if (memcmp(bytes.data(), "dex\n", 4) != 0) {
+            __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] invalid DEX header: %s", name.c_str());
+            return false;
+        }
         total += bytes.size();
         dexes.push_back(std::move(bytes));
     }
@@ -169,6 +175,7 @@ jclass load(JNIEnv* env, jobject loader, jmethodID loadClass, const char* name) 
     return cls;
 }
 void bootstrap(JNIEnv* env, const std::string& process) {
+    __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] bootstrap start; dex=%zu", dexes.size());
     jclass cl = env->FindClass("java/lang/ClassLoader");
     jclass buffer = env->FindClass("java/nio/ByteBuffer");
     jclass memory = env->FindClass("dalvik/system/InMemoryDexClassLoader");
@@ -200,7 +207,13 @@ void bootstrap(JNIEnv* env, const std::string& process) {
         {const_cast<char*>("hookNative"), const_cast<char*>("(Ljava/lang/reflect/Member;Ljava/lang/Object;Ljava/lang/reflect/Method;)Ljava/lang/reflect/Method;"), reinterpret_cast<void*>(hookNative)},
         {const_cast<char*>("applicationAttachNative"), const_cast<char*>("()Ljava/lang/reflect/Method;"), reinterpret_cast<void*>(attachNative)}
     };
-    if (env->RegisterNatives(bridge, natives, 3) != JNI_OK || error(env, "register natives")) return;
+    const jint registered = env->RegisterNatives(bridge, natives, 3);
+    const bool registrationException = error(env, "register natives");
+    if (registered != JNI_OK || registrationException) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] RegisterNatives failed: %d", registered);
+        return;
+    }
+    __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] DEX loader and JNI registration ready");
     jclass entry = load(env, loader, loadClass, "org.matrix.chromext.zygisk.ZygiskEntry");
     if (!entry) return;
     jmethodID install = env->GetStaticMethodID(entry, "install", "(Ljava/lang/String;[B[B)Z");
@@ -221,12 +234,19 @@ class Module : public zygisk::ModuleBase {
     std::string process;
     bool enabled = false;
 public:
-    void onLoad(zygisk::Api* a, JNIEnv* e) override { api = a; env = e; }
+    void onLoad(zygisk::Api* a, JNIEnv* e) override {
+        api = a; env = e;
+        __android_log_print(ANDROID_LOG_DEBUG, TAG, "[CX-ZYGISK] onLoad pid=%d arch=%zu", getpid(), sizeof(void*) * 8);
+    }
     void preAppSpecialize(zygisk::AppSpecializeArgs* args) override {
         if (!args->nice_name) { api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY); return; }
         const char* raw = env->GetStringUTFChars(args->nice_name, nullptr);
         if (raw) { process = raw; env->ReleaseStringUTFChars(args->nice_name, raw); }
         if (error(env, "process name") || !selected(process)) {
+            // Report only subprocesses of supported browsers; never broaden injection scope.
+            const auto separator = process.find(':');
+            if (separator != std::string::npos && selected(process.substr(0, separator)))
+                __android_log_print(ANDROID_LOG_DEBUG, TAG, "[CX-ZYGISK] browser subprocess skipped: %s pid=%d", process.c_str(), getpid());
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY); return;
         }
         __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] candidate process=%s uid=%d", process.c_str(), args->uid);
@@ -255,7 +275,10 @@ public:
         }
     }
     void postAppSpecialize(const zygisk::AppSpecializeArgs*) override {
-        if (enabled) bootstrap(env, process);
+        if (enabled) {
+            __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] postAppSpecialize pid=%d process=%s", getpid(), process.c_str());
+            bootstrap(env, process);
+        }
     }
     void preServerSpecialize(zygisk::ServerSpecializeArgs*) override {
         api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY);
