@@ -1,3 +1,4 @@
+#include <sys/types.h>
 #include <zygisk.hpp>
 #include <jni.h>
 #include <android/log.h>
@@ -59,8 +60,9 @@ jboolean initNative(JNIEnv* env, jclass) {
     if (!art) return JNI_FALSE;
     lsplant::InitInfo info{
         .inline_hooker = [](void* target, void* hooker) -> void* {
-            void* backup = nullptr;
-            return DobbyHook(target, hooker, &backup) == 0 ? backup : nullptr;
+            dobby_dummy_func_t backup = nullptr;
+            return DobbyHook(target, reinterpret_cast<dobby_dummy_func_t>(hooker), &backup) == 0
+                ? reinterpret_cast<void*>(backup) : nullptr;
         },
         .inline_unhooker = [](void* target) { return DobbyDestroy(target) == 0; },
         .art_symbol_resolver = [](std::string_view symbol) -> void* {
