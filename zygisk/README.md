@@ -7,3 +7,5 @@
 支持 KernelSU 系列 WebUI 宿主；其他兼容宿主待验证。Android 8.1+ ARM64，首轮优先 Android 16。独立 Zygisk + LSPlant，不依赖 LSPosed，master 的 LSP API 102 不受影响。此构建尚需真机验证资源加载、脚本运行与 UI。
 
 第三方依赖锁定在 fetch-deps.sh：LSPlant (LGPL-3.0), Dobby, xDL 和 Zygisk API sample。ChromeXt GPL-3.0。
+
+日志页「注入自检」仅允许已保存注入范围的浏览器，先启动限定 tag 的 logcat，再强制停止并冷启动，采集约 10 秒，按主进程 PID 汇总各注入阶段。浏览器打开后返回 WebUI，可读取上次保存在模块私有文件的自检报告。不会清除系统日志、浏览器数据或修改 SELinux。启动阶段通过不等于网页脚本已执行。

@@ -6,7 +6,7 @@ let libraryRecords=[], libRevision='', libDirty=false, libBusy=false, editingId=
 function tab(name){
  for(const t of ['scope','library','logs']){ $(t+'-page').hidden=t!==name;$('tab-'+t).classList.toggle('active',t===name); }
  if(name==='library'&&!libRevision&&!libBusy)loadLibrary();
- if(name==='logs'&&!$('logs-text').value)readLogs();
+ if(name==='logs'){refreshSelfTargets();if(!$('logs-text').value)readLogs();}
 }
 for(const t of ['scope','library','logs'])$('tab-'+t).addEventListener('click',()=>tab(t));
 function b64(bytes){let s='';for(let i=0;i<bytes.length;i+=4096)s+=String.fromCharCode(...bytes.subarray(i,i+4096));return btoa(s);}
@@ -174,15 +174,44 @@ $('script-file').addEventListener('change',async()=>{try{const files=[...$('scri
 $('export-close').addEventListener('click',()=>{$('export-panel').hidden=true;});$('export-copy').addEventListener('click',()=>copyText($('export-text')));
 $('export-download').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([$('export-text').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=exportName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 let diagnosticsBusy=false;
+const selfCommand='sh /data/adb/modules/chromext_zygisk/selfcheck.sh ';
+function refreshSelfTargets(){
+ const select=$('self-target'),old=select.value;
+ select.replaceChildren();
+ const choices=rows.filter(r=>r.installed&&saved.has(r.pkg));
+ for(const r of choices){const opt=document.createElement('option');opt.value=r.pkg;opt.textContent=labels[r.pkg]||r.pkg;select.append(opt);}
+ if(choices.some(r=>r.pkg===old))select.value=old;
+ else if(choices.some(r=>r.pkg==='com.quark.browser'))select.value='com.quark.browser';
+ $('self-run').disabled=diagnosticsBusy||!select.value;
+}
+function diagnosticsControls(){
+ $('logs-refresh').disabled=$('self-read').disabled=diagnosticsBusy;
+ $('self-target').disabled=diagnosticsBusy;
+ $('self-run').disabled=diagnosticsBusy||!$('self-target').value;
+}
+async function selfCheck(run){
+ if(diagnosticsBusy)return;
+ const pkg=$('self-target').value;
+ if(run&&(!/^[A-Za-z0-9_.]+$/.test(pkg)||!saved.has(pkg)||!confirm('将强制停止并重新打开 '+(labels[pkg]||pkg)+'，可能中断浏览或下载。确定开始？')))return;
+ diagnosticsBusy=true;diagnosticsControls();
+ $('logs-text').value=run?'正在自检，浏览器将打开。返回 WebUI 后可点击读取上次自检。':'正在读取上次自检…';
+ try{
+   const data=await exec(selfCommand+(run?'run '+pkg:'read'));
+   $('logs-text').value=data.trim()||'自检未返回内容，请读取上次自检。';
+ }catch(e){$('logs-text').value='自检：'+e.message+(run?'；返回 WebUI 后尝试读取上次自检。':'');}
+ finally{diagnosticsBusy=false;diagnosticsControls();}
+}
+$('self-run').addEventListener('click',()=>selfCheck(true));
+$('self-read').addEventListener('click',()=>selfCheck(false));
 async function readLogs(){
  if(diagnosticsBusy)return;
- diagnosticsBusy=true;$('logs-refresh').disabled=true;
+ diagnosticsBusy=true;diagnosticsControls();
  $('logs-text').value='正在读取模块状态与运行日志…';
  try{
    const data=await exec('sh /data/adb/modules/chromext_zygisk/diagnostics.sh');
    $('logs-text').value=data.trim()||'诊断命令未返回内容，请检查 Root 管理器 WebUI 执行接口。';
  }catch(e){$('logs-text').value='读取失败：'+e.message;}
- finally{diagnosticsBusy=false;$('logs-refresh').disabled=false;}
+ finally{diagnosticsBusy=false;diagnosticsControls();}
 }
 $('logs-refresh').addEventListener('click',readLogs);$('logs-copy').addEventListener('click',()=>copyText($('logs-text')));$('logs-clear').addEventListener('click',()=>{$('logs-text').value='';});
 tab('scope');

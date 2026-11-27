@@ -68,7 +68,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
 PY
 # APK is a build intermediate only; the resource archive is not installed.
 cp "$APK" zygisk/build/module/payload/resources.bin
-for script in customize.sh scope.sh library.sh diagnostics.sh service.sh; do
+for script in customize.sh scope.sh library.sh diagnostics.sh selfcheck.sh service.sh; do
   sh -n "zygisk/build/module/$script"
   chmod 755 "zygisk/build/module/$script"
 done
@@ -77,7 +77,7 @@ python3 - "$APK" <<'PY'
 import io, pathlib, sys, zipfile
 path = pathlib.Path("zygisk/build/ChromeXt-Zygisk-arm64-exp.zip")
 with zipfile.ZipFile(path) as outer:
-    required = {"module.prop", "customize.sh", "library.sh", "cx-snapshot", "diagnostics.sh", "service.sh", "build-revision",
+    required = {"module.prop", "customize.sh", "library.sh", "cx-snapshot", "diagnostics.sh", "selfcheck.sh", "service.sh", "build-revision",
                 "zygisk/arm64-v8a.so", "payload/classes.dex",
                 "payload/resources.bin", "supported.list", "scope.sh",
                 "webroot/index.html", "webroot/style.css", "webroot/app.js", "webroot/library.js"}

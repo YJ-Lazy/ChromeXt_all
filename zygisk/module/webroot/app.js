@@ -36,6 +36,7 @@ function render(){
    item.append(logo,details,toggle);$('list').append(item);
  }
  $('empty').hidden=!loaded||filtered.length!==0;controls();
+ if(typeof refreshSelfTargets==='function')refreshSelfTargets();
 }
 async function load(){
  if(busy)return; busy=true;loaded=false;controls();$('status').textContent='正在读取模块配置…';
@@ -55,7 +56,7 @@ async function save(){
  try{
    const reply=await exec(moduleCommand+'save'+values.map(p=>" '"+p+"'").join(''));
    if(reply.trim()!=='CX_SAVED')throw new Error('模块未确认保存');
-   saved=new Set(values);$('status').textContent='保存成功，请强制停止并重新打开对应浏览器';
+   saved=new Set(values);if(typeof refreshSelfTargets==='function')refreshSelfTargets();$('status').textContent='保存成功，请强制停止并重新打开对应浏览器';
  }catch(e){$('status').textContent='保存失败：'+e.message;}
  finally{busy=false;render();}
 }
