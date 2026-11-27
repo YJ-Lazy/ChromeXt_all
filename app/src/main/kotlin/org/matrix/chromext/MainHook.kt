@@ -55,6 +55,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     Log.d(lpparam.processName + " started")
     if (lpparam.packageName == "org.matrix.chromext") return
     if (lpparam.packageName == "android" || lpparam.packageName == "com.android.systemui") return
+    if (lpparam.packageName == "com.quark.browser") {
+      val suffix = lpparam.processName.substringAfter(':', "")
+      // These known helper processes do not own browser tabs or the floating UI.
+      if (suffix.startsWith("sandboxed_") || suffix.startsWith("privileged_process") ||
+          suffix == "gpu_process" || suffix == "channel" || suffix == "MediaPlayerService") return
+    }
     runCatching {
       Application::class.java.getDeclaredMethod("attach", Context::class.java).hookAfter {
         LogRecorder.initialize(it.thisObject as Application)
