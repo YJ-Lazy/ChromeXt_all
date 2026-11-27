@@ -53,7 +53,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".ZygiskScopeActivity" android:label="浏览器注入管理" android:exported="false" />
         <activity
             android:name=".DiagnosticsActivity"
             android:label="ScriptHub 诊断日志" android:exported="false" />

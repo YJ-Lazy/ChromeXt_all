@@ -24,4 +24,4 @@ else
     ui_print "- Android Package Manager unavailable; install manager automatically after boot."
 fi
 ui_print "- Disable other ChromeXt/Xposed injection for the same browser."
-ui_print "- Reboot, then choose browsers in ScriptHub > Injection."
+ui_print "- Reboot, then open ChromeXt Zygisk WebUI from your root manager modules page."

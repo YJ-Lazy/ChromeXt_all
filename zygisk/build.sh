@@ -14,7 +14,17 @@ cmake --build zygisk/build/native --target chromext
 rm -rf zygisk/build/module
 rm -f zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
 mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses zygisk/build/module/manager
-cp zygisk/module/* zygisk/build/module/
+cp -a zygisk/module/. zygisk/build/module/
+python3 - <<'PY'
+import pathlib, re
+native = pathlib.Path("zygisk/native/entry.cpp").read_text()
+targets = re.search(r'constexpr std::array targets\{([^\n]+)\};', native)
+assert targets
+packages = re.findall(r'"([A-Za-z0-9_.]+)"', targets.group(1))
+assert packages and len(packages) == len(set(packages))
+pathlib.Path("zygisk/build/module/supported.list").write_text("\n".join(packages) + "\n")
+PY
+node --check zygisk/build/module/webroot/app.js
 cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
 cp LICENSE zygisk/build/module/licenses/ChromeXt-LICENSE
 for entry in lsplant dobby xdl-wrapper/external/xDL; do
@@ -37,7 +47,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
 PY
 cp "$APK" zygisk/build/ChromeXt-Zygisk-Manager-debug.apk
 cp "$APK" zygisk/build/module/manager/ChromeXt-Zygisk-Manager-debug.apk
-for script in customize.sh service.sh install-manager.sh; do
+for script in customize.sh service.sh install-manager.sh scope.sh; do
   sh -n "zygisk/build/module/$script"
   chmod 755 "zygisk/build/module/$script"
 done
@@ -48,7 +58,8 @@ path = pathlib.Path("zygisk/build/ChromeXt-Zygisk-arm64-exp.zip")
 with zipfile.ZipFile(path) as outer:
     required = {"module.prop", "customize.sh", "service.sh", "install-manager.sh",
                 "zygisk/arm64-v8a.so", "payload/classes.dex",
-                "manager/ChromeXt-Zygisk-Manager-debug.apk"}
+                "manager/ChromeXt-Zygisk-Manager-debug.apk", "supported.list", "scope.sh",
+                "webroot/index.html", "webroot/style.css", "webroot/app.js"}
     assert required <= set(outer.namelist()), required - set(outer.namelist())
     embedded = outer.read("manager/ChromeXt-Zygisk-Manager-debug.apk")
     assert embedded == pathlib.Path(sys.argv[1]).read_bytes()

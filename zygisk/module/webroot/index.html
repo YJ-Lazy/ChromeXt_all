@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>ChromeXt Zygisk</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<header><div class="mark">CX</div><div><div class="eyebrow">ChromeXt · Zygisk</div><h1>浏览器注入管理</h1></div></header>
+<section class="card"><div id="status" role="status" aria-live="polite">正在读取模块配置…</div><p>仅注入选中的受支持浏览器主进程。保存后强制停止对应浏览器，再重新打开。脚本分配不受影响。</p><div class="actions"><button id="reload">刷新</button><button id="all" disabled>全选已安装</button><button id="none" disabled>全部取消</button></div></section>
+<label class="search"><input type="search" id="query" placeholder="搜索浏览器或包名" aria-label="搜索浏览器"></label>
+<div id="list"></div><p id="empty" hidden>没有匹配的已安装浏览器。</p>
+<footer><span id="count">已选择 0 个</span><button id="save" disabled>保存注入范围</button></footer>
+</main><script src="app.js" defer></script></body></html>
