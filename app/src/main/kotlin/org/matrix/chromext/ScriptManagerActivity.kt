@@ -143,6 +143,7 @@ class ScriptManagerActivity : Activity() {
     tab("脚本","file") { browserTab = false; refresh() }
     tab("浏览器","globe") { browserTab = true; refresh() }
     tab("日志","log") { startActivity(Intent(this,DiagnosticsActivity::class.java)) }
+    tab("注入","globe") { startActivity(Intent(this,ZygiskScopeActivity::class.java)) }
     tab("刷新","refresh") { refresh() }
     root.addView(nav)
     setContentView(root)
@@ -656,7 +657,7 @@ class ScriptManagerActivity : Activity() {
       val active=i==(if(browserTab) 1 else 0)
       val color=if(active) accent else muted
       b.background=panel(if(active) soft else surface,14)
-      (b.getChildAt(0) as ImageView).setImageDrawable(Glyph(listOf("file","globe","log","refresh")[i],color))
+      (b.getChildAt(0) as ImageView).setImageDrawable(Glyph(listOf("file","globe","log","globe","refresh")[i],color))
       (b.getChildAt(1) as TextView).setTextColor(color)
       b.isSelected=active
     }

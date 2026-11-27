@@ -27,6 +27,13 @@
         <package android:name="org.greatfire.freebrowser"/>
         <package android:name="org.triple.banana"/>
         <package android:name="us.spotco.mulch"/>
+        <package android:name="app.vanadium.browser"/>
+        <package android:name="com.android.browser"/>
+        <package android:name="com.herond.android.browser"/>
+        <package android:name="com.mi.globalbrowser"/>
+        <package android:name="org.axpos.aosmium"/>
+        <package android:name="org.chromium.chrome"/>
+        <package android:name="com.qihoo.contents"/>
     </queries>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -46,6 +53,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".ZygiskScopeActivity" android:label="浏览器注入管理" android:exported="false" />
         <activity
             android:name=".DiagnosticsActivity"
             android:label="ScriptHub 诊断日志" android:exported="false" />

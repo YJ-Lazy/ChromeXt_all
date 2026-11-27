@@ -31,6 +31,37 @@ bool selected(const std::string& process) {
     for (const char* name : targets) if (process == name) return true;
     return false;
 }
+// A root-owned, bounded allowlist is read before specialization. Missing or malformed
+// configuration means no injection, never "all browsers".
+bool scopeAllows(int dir, const std::string& process) {
+    int fd = openat(dir, "injection.list", O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return false;
+    struct stat st{};
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != 0 ||
+        (st.st_mode & 0022) || st.st_size < 0 || st.st_size > 8192) {
+        close(fd);
+        return false;
+    }
+    std::string data(static_cast<size_t>(st.st_size), '\0');
+    size_t offset = 0;
+    while (offset < data.size()) {
+        ssize_t n = read(fd, data.data() + offset, data.size() - offset);
+        if (n <= 0) { close(fd); return false; }
+        offset += static_cast<size_t>(n);
+    }
+    close(fd);
+    bool match = false;
+    size_t start = 0;
+    while (start < data.size()) {
+        auto end = data.find('\n', start);
+        auto line = data.substr(start, end == std::string::npos ? end : end - start);
+        if (!selected(line)) return false;
+        if (line == process) match = true;
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return match;
+}
 bool readDexes(int dir) {
     size_t total = 0;
     for (int i = 1; i <= 16; ++i) {
@@ -155,7 +186,14 @@ public:
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY); return;
         }
         int dir = api->getModuleDir();
-        if (dir >= 0) { enabled = readDexes(dir); close(dir); }
+        if (dir < 0 || !scopeAllows(dir, process)) {
+            if (dir >= 0) close(dir);
+            __android_log_print(ANDROID_LOG_DEBUG, TAG, "[CX-ZYGISK] scope skipped: %s", process.c_str());
+            api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
+        enabled = readDexes(dir);
+        close(dir);
         if (!enabled) {
             dexes.clear();
             __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] payload missing or invalid");
