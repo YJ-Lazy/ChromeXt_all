@@ -44,6 +44,7 @@ android {
 }
 
 dependencies {
+  implementation("androidx.annotation:annotation:1.9.1")
   compileOnly("io.github.libxposed:api:102.0.0")
   implementation("io.github.libxposed:service:102.0.0")
 }
