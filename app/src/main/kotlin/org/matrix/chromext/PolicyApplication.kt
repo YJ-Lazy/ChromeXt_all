@@ -28,6 +28,8 @@ internal object PolicyPublisher : XposedServiceHelper.OnServiceListener {
   private val executor = Executors.newSingleThreadScheduledExecutor()
   private var pending: ScheduledFuture<*>? = null
   private var service: XposedService? = null
+  // SharedPreferences implementations may update their in-memory map before a failed commit.
+  private var retryWrite = true
   private var prefs: SharedPreferences? = null
   @Volatile var status = "等待 LSPosed 共享服务"
     private set
@@ -61,7 +63,7 @@ internal object PolicyPublisher : XposedServiceHelper.OnServiceListener {
   }
 
   override fun onServiceBind(service: XposedService) {
-    synchronized(this) { this.service = service }
+    synchronized(this) { this.service = service; retryWrite = true }
     request()
   }
 
@@ -94,7 +96,7 @@ internal object PolicyPublisher : XposedServiceHelper.OnServiceListener {
       val hash = PolicySnapshot.digest(bytes)
       val remote = current.getRemotePreferences(PolicySnapshot.GROUP)
       val previous = remote.getString(PolicySnapshot.POINTER, "") ?: ""
-      if (previous.substringAfter(':', "") != hash) {
+      if (retryWrite || previous.substringAfter(':', "") != hash) {
         val slot = if (previous.startsWith("a:")) "b" else "a"
         // Write the inactive slot completely, then commit the small generation pointer.
         ParcelFileDescriptor.AutoCloseOutputStream(current.openRemoteFile("policy-$slot.json")).use { out ->
@@ -106,8 +108,10 @@ internal object PolicyPublisher : XposedServiceHelper.OnServiceListener {
         }
         check(remote.edit().putString(PolicySnapshot.POINTER, "$slot:$hash").commit()) { "共享版本提交失败" }
       }
+      retryWrite = false
       status = "共享配置已发布 · " + hash.take(8)
     } catch (t: Throwable) {
+      retryWrite = true
       status = "共享发布失败：" + (t.message ?: t.javaClass.simpleName)
       android.util.Log.e("ScriptHub", "Shared policy publication failed", t)
     }

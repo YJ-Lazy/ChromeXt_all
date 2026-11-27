@@ -160,22 +160,37 @@ class ScriptPolicyProvider : ContentProvider() {
 }
 
 object ScriptPolicy {
+  private var retryAfter = 0L
   @Synchronized
   fun disabled(scripts: List<org.matrix.chromext.script.Script>, remove: (String) -> Unit,
       currentScripts: () -> List<org.matrix.chromext.script.Script>,
       accept: (String, String) -> Boolean): Set<String> {
     val ctx = Chrome.getContext()
-    val blockOnFailure = scripts.map { it.id }.toMutableSet()
     var sharedResult: PolicySnapshot.Result? = null
+    var sharedGeneration: String? = null
+    fun offline(): Set<String> {
+      val current = currentScripts()
+      val shared = sharedResult ?: return PolicySnapshot.offline(ctx, current)
+      // Known decisions from a verified snapshot win. For unknown IDs, keep only a
+      // provider-authorized fingerprint associated with this very same generation.
+      val cached = PolicySnapshot.offline(ctx, current, sharedGeneration)
+      val blocked = (shared.blocked - shared.unknownIds) + (shared.unknownIds intersect cached)
+      runCatching { PolicySnapshot.remember(ctx, current, blocked, sharedGeneration.orEmpty()) }
+      return blocked
+    }
     runCatching {
       val data = PolicySnapshot.read()
       if (data != null) {
         val result = PolicySnapshot.apply(data, ctx.packageName, scripts, remove, accept)
         sharedResult = result
-        PolicySnapshot.remember(ctx, currentScripts(), result.blocked)
-        if (!result.unknown) return result.blocked
+        sharedGeneration = PolicySnapshot.generation
+        if (result.unknownIds.isEmpty()) {
+          runCatching { PolicySnapshot.remember(ctx, currentScripts(), result.blocked, sharedGeneration.orEmpty()) }
+          return result.blocked
+        }
       }
     }.onFailure { org.matrix.chromext.utils.Log.ex(it, "[CX-POLICY] shared snapshot unavailable") }
+    if (android.os.SystemClock.elapsedRealtime() < retryAfter) return offline()
     return runCatching {
       val ids = scripts.map { it.id }
       val resolver = Chrome.getContext().contentResolver
@@ -206,9 +221,7 @@ object ScriptPolicy {
         val revisions = JSONObject(result.getString("revisions") ?: "{}")
         val pending = JSONArray(result.getString("assignedIds") ?: "[]")
         val pendingIds = (0 until pending.length()).map { pending.getString(it) }.distinct()
-        blockOnFailure.addAll(pendingIds)
-        blockOnFailure.addAll(assigned.keys().asSequence().toList())
-        for (i in 0 until removed.length()) {
+         for (i in 0 until removed.length()) {
           val id = removed.getString(i)
           blocked.add(id)
           remove(id)
@@ -278,20 +291,21 @@ object ScriptPolicy {
           if (!accept(id, assigned.getString(id))) blocked.add(id)
         }
         org.matrix.chromext.utils.Log.d("[CX-POLICY] sync acknowledged; pending=${pendingIds.size}; blocked=${blocked.size}")
-        PolicySnapshot.remember(ctx, currentScripts(), blocked)
+        runCatching { PolicySnapshot.remember(ctx, currentScripts(), blocked, sharedGeneration.orEmpty()) }
+        retryAfter = 0L
         blocked.toSet()
       } finally {
         provider.close()
       }
     }.getOrElse { error ->
+      retryAfter = android.os.SystemClock.elapsedRealtime() + 5000
       org.matrix.chromext.utils.Log.ex(error, "[CX-POLICY] provider sync failed")
       // A rejected caller is not an offline condition. Do not bypass explicit denial.
       if (generateSequence(error) { it.cause }.any { it is SecurityException }) {
         PolicySnapshot.invalidate(ctx)
         currentScripts().map { it.id }.toSet()
       } else {
-        val cached = PolicySnapshot.offline(ctx, currentScripts())
-        cached + (sharedResult?.blocked ?: emptySet())
+        offline()
       }
     }
   }

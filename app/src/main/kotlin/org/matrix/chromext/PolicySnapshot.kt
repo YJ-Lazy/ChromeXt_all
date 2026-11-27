@@ -57,12 +57,13 @@ internal object PolicySnapshot {
     for ((pkg, ids) in policies) {
       require(pkg.matches(Regex("[A-Za-z0-9_.]+")) && ids.size <= 5000)
       val entries = JSONObject()
+      val installed = inventory(state, pkg)
       for (id in ids) {
         if (id in deleted) continue
         val source = state["source:$id"] as? String ?: continue
         require(source.toByteArray(Charsets.UTF_8).size <= ScriptPolicyProvider.MAX_SOURCE)
         entries.put(id, state["enabled:$pkg:$id"] != false &&
-            (state["assigned:$pkg:$id"] == true || id in inventory(state, pkg)))
+            (state["assigned:$pkg:$id"] == true || id in installed))
         if (!sources.has(id)) sources.put(id, source)
       }
       browserJson.put(pkg, entries)
@@ -77,7 +78,8 @@ internal object PolicySnapshot {
     return (0 until array.length()).map { array.getString(it) }.toSet()
   }
 
-  data class Result(val blocked: Set<String>, val unknown: Boolean)
+  data class Result(val blocked: Set<String>, val unknownIds: Set<String>)
+  val generation: String get() = pointer
 
   /** Read the small generation pointer each sync; parse the file only when it changes. */
   fun read(): JSONObject? {
@@ -117,14 +119,14 @@ internal object PolicySnapshot {
     val deleted = (0 until tombstones.length()).map { tombstones.getString(it) }.toSet()
     val local = scripts.associateBy { it.id }
     val blocked = mutableSetOf<String>()
-    var unknown = false
+    val unknown = mutableSetOf<String>()
     for (id in local.keys) {
       if (id in deleted) {
         blocked.add(id)
         runCatching { remove(id) }
       } else if (!entries.has(id)) {
         blocked.add(id)
-        unknown = true
+        unknown.add(id)
       }
     }
     for (id in entries.keys()) {
@@ -143,20 +145,22 @@ internal object PolicySnapshot {
   }
 
   /** Save only exact code fingerprints that were authorized, not an unconditional allow-all. */
-  fun remember(ctx: Context, scripts: List<Script>, blocked: Set<String>) {
+  fun remember(ctx: Context, scripts: List<Script>, blocked: Set<String>, generation: String = "") {
     val allowed = JSONObject()
     for (script in scripts.sortedBy { it.id }) {
       if (script.id !in blocked) allowed.put(script.id, fingerprint(script))
     }
     val prefs = ctx.getSharedPreferences(CACHE, Context.MODE_PRIVATE)
     val value = allowed.toString()
-    if (prefs.getString("allowed", null) != value)
-      check(prefs.edit().putString("allowed", value).commit()) { "Offline policy cache write failed" }
+    if (prefs.getString("allowed", null) != value || prefs.getString("generation", "") != generation)
+      check(prefs.edit().putString("allowed", value).putString("generation", generation).commit()) { "Offline policy cache write failed" }
   }
 
-  fun offline(ctx: Context, scripts: List<Script>): Set<String> {
+  fun offline(ctx: Context, scripts: List<Script>, requiredGeneration: String? = null): Set<String> {
     val cached = runCatching {
-      JSONObject(ctx.getSharedPreferences(CACHE, Context.MODE_PRIVATE).getString("allowed", "{}") ?: "{}")
+      val prefs = ctx.getSharedPreferences(CACHE, Context.MODE_PRIVATE)
+      if (requiredGeneration != null && prefs.getString("generation", "") != requiredGeneration) JSONObject()
+      else JSONObject(prefs.getString("allowed", "{}") ?: "{}")
     }.getOrElse { JSONObject() }
     return scripts.filter { cached.optString(it.id) != fingerprint(it) }.map { it.id }.toSet()
   }
