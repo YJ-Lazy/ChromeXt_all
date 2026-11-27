@@ -34,7 +34,7 @@ function validateLibrary(data){
 function libStatus(s){$('lib-status').textContent=s;}
 function libControls(){
  $('lib-load').disabled=libBusy;$('lib-import').disabled=libBusy||!libRevision;$('lib-export').disabled=libBusy||!libRevision;
- $('lib-save').disabled=libBusy||!libRevision||!libDirty;
+ $('lib-save').disabled=libBusy||!libRevision||!libDirty; $('lib-sync').disabled=libBusy||!libRevision;
  document.querySelectorAll('#lib-list button,#lib-list input').forEach(el=>el.disabled=libBusy);
 }
 function changed(){libDirty=true;libStatus('有未保存的修改');libControls();}
@@ -66,6 +66,42 @@ async function saveLibrary(){
  }catch(e){if(token)try{await exec(libCmd+'abort '+token);}catch(_){}libStatus('保存失败：'+e.message);}
  finally{libBusy=false;renderLibrary();}
 }
+async function syncLocal(){
+ if(libBusy||!libRevision)return;
+ if(!confirm('读取已启用浏览器的 ChromeXt 本地脚本？仅合并新增脚本，不覆盖同名脚本或恢复已删除脚本。'))return;
+ const candidates=rows.filter(r=>r.installed&&saved.has(r.pkg));
+ if(!candidates.length){libStatus('请先选择并保存注入范围，再重启浏览器并打开网页');return;}
+ libBusy=true;libControls();let added=0,conflicts=0,skipped=0,errors=[];
+ try{
+  for(const r of candidates){
+   let token='';
+   try{
+    libStatus('正在同步 '+(labels[r.pkg]||r.pkg)+'…');
+    token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
+    const size=Number((await exec(libCmd+'local-begin '+token+' '+r.pkg)).trim());
+    if(!Number.isInteger(size)||size<1||size>limit)throw Error('快照大小异常');
+    const bytes=new Uint8Array(size);let offset=0;
+    for(let i=0;offset<size;i++){const raw=atob((await exec(libCmd+'local-read '+token+' '+i)).trim());if(!raw.length||offset+raw.length>size)throw Error('快照分片异常');for(let j=0;j<raw.length;j++)bytes[offset++]=raw.charCodeAt(j);}
+    const data=JSON.parse(decoder.decode(bytes));
+    if(data.format!=='ChromeXt-local-v1'||data.package!==r.pkg||!Array.isArray(data.scripts)||data.scripts.length>5000)throw Error('快照格式异常');
+    for(const item of data.scripts){
+     try{
+      if(metadata(item.source).id!==item.id){skipped++;continue;}
+      const old=libraryRecords.find(x=>x.id===item.id);
+      if(old){if(!old.deleted&&old.source!==item.source)conflicts++;else skipped++;continue;}
+      if(libraryRecords.length>=5000){skipped++;continue;}
+      libraryRecords.push({id:item.id,source:item.source,targets:[r.pkg],deleted:false});
+      if(encoder.encode(JSON.stringify({format:'ChromeXt-library-v1',scripts:libraryRecords})).length>limit){libraryRecords.pop();skipped++;continue;}
+      added++;libDirty=true;
+     }catch(_){skipped++;}
+    }
+   }catch(e){errors.push((labels[r.pkg]||r.pkg)+': '+e.message);}
+   finally{if(token)try{await exec(libCmd+'local-end '+token);}catch(_){}}
+  }
+  libStatus('同步完成：新增 '+added+'，同名冲突 '+conflicts+'，跳过 '+skipped+(added?'。请保存脚本库。':'。')+(errors.length?' '+errors.join('；'):''));
+ }finally{libBusy=false;renderLibrary();}
+}
+$('lib-sync').addEventListener('click',syncLocal);
 function buttonFor(name,fn){const b=document.createElement('button');b.textContent=name;b.addEventListener('click',fn);return b;}
 function renderLibrary(){
  const q=$('lib-query').value.trim().toLowerCase();$('lib-list').replaceChildren();

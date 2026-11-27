@@ -36,6 +36,25 @@ case "${1:-}" in
    printf '%s\n' "$(hash)"
    ;;
  abort) validtoken "$2"; rm -f "$d/.library-$2/data"; rmdir "$d/.library-$2" 2>/dev/null || true ;;
+ local-begin)
+   active; validtoken "$2"
+   pkg="$3"
+   case "$pkg" in ''|*[!A-Za-z0-9_.]*) exit 1;; esac
+   grep -Fxq "$pkg" "$d/supported.list" && grep -Fxq "$pkg" "$d/injection.list" || exit 1
+   umask 077; mkdir "$d/.snapshot-$2"
+   t="$d/.snapshot-$2/data"
+   if ! "$d/cx-snapshot" "$pkg" > "$t"; then
+     rm -f "$t"; rmdir "$d/.snapshot-$2"
+     echo "No local snapshot; restart the selected browser and open a web page" >&2; exit 1
+   fi
+   wc -c < "$t" | tr -d '[:space:]'
+   ;;
+ local-read)
+   validtoken "$2"; number "$3"; [ "$3" -le 1024 ] || exit 1
+   t="$d/.snapshot-$2/data"; [ -f "$t" ] && [ ! -L "$t" ] || exit 1
+   dd if="$t" bs=16384 skip="$3" count=1 2>/dev/null | base64 | tr -d '\r\n'
+   ;;
+ local-end) validtoken "$2"; rm -f "$d/.snapshot-$2/data"; rmdir "$d/.snapshot-$2" 2>/dev/null || true ;;
  logs) logcat -d -t 2500 -v threadtime -s CXDiagnostics:V ChromeXt-Zygisk:V CXStandalone:V ;;
  *) exit 1;;
 esac

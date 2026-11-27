@@ -10,7 +10,7 @@ cmake -S zygisk/native -B zygisk/build/native -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static \
   -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
-cmake --build zygisk/build/native --target chromext
+cmake --build zygisk/build/native --target chromext cx-snapshot
 rm -rf zygisk/build/module
 rm -f zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
 mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses
@@ -27,6 +27,8 @@ PY
 node --check zygisk/build/module/webroot/app.js
 node --check zygisk/build/module/webroot/library.js
 cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
+cp zygisk/build/native/cx-snapshot zygisk/build/module/cx-snapshot
+chmod 755 zygisk/build/module/cx-snapshot
 cp LICENSE zygisk/build/module/licenses/ChromeXt-LICENSE
 for entry in lsplant dobby xdl-wrapper/external/xDL; do
   name="$(basename "$entry")"
@@ -57,7 +59,7 @@ python3 - "$APK" <<'PY'
 import io, pathlib, sys, zipfile
 path = pathlib.Path("zygisk/build/ChromeXt-Zygisk-arm64-exp.zip")
 with zipfile.ZipFile(path) as outer:
-    required = {"module.prop", "customize.sh", "library.sh",
+    required = {"module.prop", "customize.sh", "library.sh", "cx-snapshot",
                 "zygisk/arm64-v8a.so", "payload/classes.dex",
                 "payload/resources.bin", "supported.list", "scope.sh",
                 "webroot/index.html", "webroot/style.css", "webroot/app.js", "webroot/library.js"}

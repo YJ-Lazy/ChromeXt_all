@@ -45,6 +45,43 @@ object ScriptDbManager {
 
     keepStorage =
         ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).getBoolean("keep_storage", true)
+    publishLocalScripts()
+  }
+
+  // A bounded, private snapshot of only ChromeXt's own scripts (no GM values).
+  // The privileged WebUI reads this file on explicit request, never the browser database.
+  @Synchronized private fun publishLocalScripts() {
+    runCatching {
+      val ctx = Chrome.getContext()
+      val helper = ScriptDbHelper(ctx)
+      val records = JSONArray()
+      var total = 0
+      try {
+        helper.readableDatabase.query("script", arrayOf("id","meta","code"), null, null, null, null, "id").use { cursor ->
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            (cursor as AbstractWindowedCursor).setWindow(CursorWindow("local-scripts", 10L * 1024 * 1024))
+          while (cursor.moveToNext()) {
+            val id = cursor.getString(0)
+            val source = cursor.getString(1) + cursor.getString(2)
+            val bytes = source.toByteArray(Charsets.UTF_8).size
+            if (id.length > 2048 || bytes > 5 * 1024 * 1024) continue
+            val record = JSONObject().put("id",id).put("source",source)
+            val size = record.toString().toByteArray(Charsets.UTF_8).size
+            if (total + size > 16 * 1024 * 1024 - 65536 || records.length() >= 5000) break
+            total += size + 1
+            records.put(record)
+          }
+        }
+      } finally { helper.close() }
+      val snapshot = JSONObject().put("format","ChromeXt-local-v1").put("package",ctx.packageName).put("scripts",records)
+          .toString().toByteArray(Charsets.UTF_8)
+      require(snapshot.size <= 16 * 1024 * 1024)
+      val file = android.util.AtomicFile(java.io.File(ctx.filesDir,"chromext-local-scripts.json"))
+      val stream = file.startWrite()
+      try { stream.write(snapshot); file.finishWrite(stream) }
+      catch (error: Throwable) { file.failWrite(stream); throw error }
+      Log.d("[CX-SYNC] local snapshot: ${records.length()} script(s)")
+    }.onFailure { Log.ex(it,"[CX-SYNC] local snapshot failed") }
   }
 
   fun insert(vararg script: Script) {
@@ -76,6 +113,7 @@ object ScriptDbManager {
       dbHelper.close()
     }
     Log.i("[CX-DB] persisted ${script.size} script(s)")
+    publishLocalScripts()
   }
 
   fun remove(vararg ids: String) {
@@ -89,6 +127,7 @@ object ScriptDbManager {
     } finally {
       helper.close()
     }
+    publishLocalScripts()
   }
 
   private fun fixEncoding(url: String, path: String, codes: MutableList<String>) {

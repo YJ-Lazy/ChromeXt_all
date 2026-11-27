@@ -12,7 +12,7 @@
 <div id="list"></div><p id="empty" hidden>没有匹配的已安装浏览器。</p>
 <footer><span id="count">已选择 0 个</span><button id="save" disabled>保存注入范围</button></footer>
 </section>
-<section id="library-page" hidden><section class="card"><h2>脚本库</h2><p id="lib-status" role="status">正在加载…</p><div class="actions"><button id="lib-load">刷新</button><button id="lib-import">导入 / 新建</button><button id="lib-export">全部导出</button></div><p>修改后保存，再强制停止并重新打开浏览器。导入默认不启用。</p></section>
+<section id="library-page" hidden><section class="card"><h2>脚本库</h2><p id="lib-status" role="status">正在加载…</p><div class="actions"><button id="lib-load">刷新</button><button id="lib-import">导入 / 新建</button><button id="lib-export">全部导出</button></div><button id="lib-sync" disabled>同步浏览器本地脚本</button><p>修改后保存，再强制停止并重新打开浏览器。导入默认不启用。</p></section>
 <input type="search" id="lib-query" placeholder="搜索脚本名称或 ID">
 <div id="lib-list"></div><button id="lib-save" disabled>保存脚本库</button>
 <section class="card" id="editor" hidden><h2 id="editor-title">导入或编辑脚本</h2><input id="script-file" type="file" accept=".js,.json,.txt" multiple><input type="url" id="script-url" placeholder="HTTPS 脚本链接（支持跨域时）"><button id="fetch-url">获取链接源码</button><textarea id="source" rows="12" placeholder="粘贴脚本源码或 ScriptHub JSON 备份"></textarea><div class="actions"><button id="editor-cancel">取消</button><button id="editor-apply">确认</button></div></section>

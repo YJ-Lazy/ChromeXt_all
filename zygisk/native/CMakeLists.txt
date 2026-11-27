@@ -22,3 +22,6 @@ add_library(chromext SHARED entry.cpp "${XD}/xdl.c"
 target_include_directories(chromext PRIVATE "${TP}/zygisk" "${XD}" "${XC}/include")
 target_link_libraries(chromext PRIVATE lsplant_static dobby log dl)
 target_link_options(chromext PRIVATE "-Wl,-z,max-page-size=16384")
+
+add_executable(cx-snapshot snapshot.cpp)
+target_link_options(cx-snapshot PRIVATE "-Wl,-z,max-page-size=16384")
