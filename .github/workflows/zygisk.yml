@@ -1,0 +1,47 @@
+name: ChromeXt Zygisk standalone CI
+on:
+  push:
+    branches: [zygisk-standalone]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build separate manager APK
+        run: ./gradlew app:assembleDebug
+      - name: Verify no Xposed module entry
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("app/build/outputs/apk/debug/app-debug.apk") as z:
+              assert "assets/xposed_init" not in z.namelist()
+              for name in ["GM.js", "scripts.js", "editor.js", "eruda.js", "encoding.js"]:
+                  assert z.getinfo("assets/" + name).file_size
+          PY
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/debug/app-debug.apk > /tmp/manifest.xml
+          ! grep -F 'android:name="xposedmodule"' /tmp/manifest.xml
+      - name: Prepare NDK and CMake
+        run: |
+          sdkmanager 'ndk;29.0.14206865'
+          python3 -m pip install --upgrade cmake ninja
+          cmake --version
+      - name: Build Zygisk module
+        run: bash zygisk/build.sh
+      - name: Upload manager APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChromeXt-Zygisk-Manager-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+      - name: Upload Zygisk ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChromeXt-Zygisk-arm64-exp
+          path: zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
+          if-no-files-found: error

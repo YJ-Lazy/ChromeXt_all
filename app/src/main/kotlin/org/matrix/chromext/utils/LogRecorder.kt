@@ -61,7 +61,7 @@ object LogRecorder {
     val local = read(context)
     val output = File.createTempFile("root-diagnostics-", ".txt", context.cacheDir)
     try {
-      val command = "echo '--- ChromeXt Logcat ---'; logcat -d -t 5000 -v threadtime -s CXDiagnostics:V; echo '--- LSPosed module logs ---'; for f in /data/adb/lspd/log/modules*.log; do [ -f \"\$f\" ] && grep -F org.matrix.chromext \"\$f\" | tail -n 1000; done"
+      val command = "echo '--- ChromeXt Logcat ---'; logcat -d -t 5000 -v threadtime -s CXDiagnostics:V ChromeXt-Zygisk:V"
       val process = ProcessBuilder("su", "-c", command).redirectErrorStream(true).redirectOutput(output).start()
       if (!process.waitFor(45, TimeUnit.SECONDS)) {
         process.destroyForcibly()

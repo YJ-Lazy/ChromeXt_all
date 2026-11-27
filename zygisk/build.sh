@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+NDK="${ANDROID_NDK_HOME:-${ANDROID_HOME:?}/ndk/29.0.14206865}"
+APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+test -f "$APK"
+bash zygisk/fetch-deps.sh
+cmake -S zygisk/native -B zygisk/build/native -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static \
+  -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
+cmake --build zygisk/build/native --target chromext
+mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses
+cp zygisk/module/* zygisk/build/module/
+cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
+cp LICENSE zygisk/build/module/licenses/ChromeXt-LICENSE
+for entry in lsplant dobby xdl-wrapper/external/xDL; do
+  name="$(basename "$entry")"
+  for f in LICENSE LICENSE.txt COPYING; do
+    if [ -f "zygisk/deps/$entry/$f" ]; then cp "zygisk/deps/$entry/$f" "zygisk/build/module/licenses/$name-$f"; fi
+  done
+done
+cp zygisk/README.md zygisk/build/module/README.md
+python3 - "$APK" <<'PY'
+import pathlib, re, sys, zipfile
+dest = pathlib.Path("zygisk/build/module/payload")
+with zipfile.ZipFile(sys.argv[1]) as z:
+    assert "assets/xposed_init" not in z.namelist()
+    names = [n for n in z.namelist() if re.fullmatch(r"classes(?:[2-9]|1[0-6])?\.dex", n)]
+    assert "classes.dex" in names
+    assert len(names) == len([n for n in z.namelist() if re.fullmatch(r"classes\d*\.dex", n)])
+    for n in names:
+        (dest / n).write_bytes(z.read(n))
+PY
+cp "$APK" zygisk/build/ChromeXt-Zygisk-Manager-debug.apk
+(cd zygisk/build/module && zip -qr ../ChromeXt-Zygisk-arm64-exp.zip .)

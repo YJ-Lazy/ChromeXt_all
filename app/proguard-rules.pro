@@ -1,6 +1,4 @@
-# Xposed/Vector instantiates the entry point reflectively. Keeping only the class
-# does not preserve its no-argument constructor with current R8 versions.
--keep class org.matrix.chromext.MainHook {
-    public <init>();
-}
+# Native JNI and the in-memory entry use these classes by name.
+-keep class org.matrix.chromext.zygisk.ZygiskEntry { *; }
+-keep class de.robv.android.xposed.** { *; }
 -keepattributes SourceFile,LineNumberTable

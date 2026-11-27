@@ -98,7 +98,7 @@ class ScriptManagerActivity : Activity() {
       gravity = android.view.Gravity.CENTER_VERTICAL
       addView(ImageView(this@ScriptManagerActivity).apply { setImageResource(R.mipmap.ic_launcher) },LinearLayout.LayoutParams(dp(48),dp(48)).apply { rightMargin=dp(12) })
       addView(column().apply { addView(label("ScriptHub",27f,true)); addView(label("跨浏览器脚本管理",12f)) },LinearLayout.LayoutParams(0,-2,1f))
-      addView(column().apply { addView(label("v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) }); addView(action("设置") { gestureSettings() }) },LinearLayout.LayoutParams(-2,-2))
+      addView(column().apply { addView(label("Zygisk · v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) }); addView(action("设置") { gestureSettings() }) },LinearLayout.LayoutParams(-2,-2))
     })
     root.addView(View(this),LinearLayout.LayoutParams(1,dp(14)))
     root.addView(card().apply {
@@ -667,7 +667,7 @@ class ScriptManagerActivity : Activity() {
       for (pkg in browsers.filter { browserName(it).contains(q,true)||it.contains(q,true) }) {
         list.addView(card().apply {
           addView(LinearLayout(this@ScriptManagerActivity).apply { gravity=android.view.Gravity.CENTER_VERTICAL; addView(ImageView(this@ScriptManagerActivity).apply { runCatching { setImageDrawable(packageManager.getApplicationIcon(pkg)) } },LinearLayout.LayoutParams(dp(42),dp(42)).apply { rightMargin=dp(12) }); addView(column().apply { addView(label(browserName(pkg),19f,true)); addView(label(pkg,12f)) },LinearLayout.LayoutParams(0,-2,1f)) })
-          addView(label(if (prefs.contains("inventory:$pkg")) "已同步过脚本清单" else "尚未同步 · 请检查 LSPosed 作用域"))
+          addView(label(if (prefs.contains("inventory:$pkg")) "已同步过脚本清单" else "尚未同步 · 请检查 Zygisk 模块及浏览器进程"))
           packageManager.getLaunchIntentForPackage(pkg)?.let { launch -> addView(action("打开浏览器") { startActivity(launch) }) }
           for (id in ids) addView(switchFor(pkg,id,id.substringAfterLast(':')))
           addView(action("适配诊断") { startActivity(Intent(this@ScriptManagerActivity,DiagnosticsActivity::class.java)) })

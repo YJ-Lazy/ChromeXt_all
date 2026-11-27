@@ -1,0 +1,6 @@
+id=chromext_zygisk
+name=ChromeXt Zygisk
+version=4.2-exp1
+versionCode=24
+author=ChromeXt contributors / YJ-Lazy
+description=Standalone browser userscript runtime; requires matching ChromeXt Zygisk manager APK.
