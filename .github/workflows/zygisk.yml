@@ -12,31 +12,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Build separate manager APK
+      - name: Build manager APK with default debug signature
         run: ./gradlew app:assembleDebug
-      - name: Use existing signing key when configured
-        env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "$SIGNING_KEY" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_STORE_PASSWORD" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo "::warning::Using CI debug signing key. Upgrading from an APK signed by another key will fail safely."
-            exit 0
-          fi
-          APK=app/build/outputs/apk/debug/app-debug.apk
-          KEYSTORE="$(mktemp "$RUNNER_TEMP/chromext-key.XXXXXX")"
-          trap 'rm -f "$KEYSTORE" "$APK.signed.apk"' EXIT
-          printf '%s' "$SIGNING_KEY" | base64 -d > "$KEYSTORE"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
-          test -x "$APKSIGNER"
-          "$APKSIGNER" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEY_STORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$APK.signed.apk" "$APK"
-          "$APKSIGNER" verify "$APK.signed.apk"
-          mv "$APK.signed.apk" "$APK"
-          rm -f "$APK.signed.apk.idsig"
       - name: Verify no Xposed module entry
         run: |
           python3 - <<'PY'
