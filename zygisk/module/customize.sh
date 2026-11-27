@@ -12,7 +12,11 @@ for name in injection.list library.json; do
     fi
 done
 [ -f "$MODPATH/injection.list" ] || : > "$MODPATH/injection.list"
-[ -s "$MODPATH/library.json" ] || printf '%s' '{"format":"ChromeXt-library-v1","scripts":[]}' > "$MODPATH/library.json"
+[ ! -L "$MODPATH/library.json" ] || abort "! Invalid library path"
+if [ ! -s "$MODPATH/library.json" ]; then
+    printf '%s' '{"format":"ChromeXt-library-v1","scripts":[]}' > "$MODPATH/library.json" || abort "! Cannot initialize script library"
+fi
+[ -s "$MODPATH/library.json" ] || abort "! Empty library after initialization"
 chown 0:0 "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" || abort "! Cannot set ownership"
 chmod 600 "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" || abort "! Cannot set permissions"
 ui_print "- WebUI-only module. No manager APK will be installed."

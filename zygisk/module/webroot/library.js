@@ -39,7 +39,11 @@ function libControls(){
 }
 function changed(){libDirty=true;libStatus('有未保存的修改');libControls();}
 async function info(){
- const s=(await exec(libCmd+'info')).trim();const m=/^([a-f0-9]{64}) (\d+)$/.exec(s);if(!m||Number(m[2])>limit||Number(m[2])<1)throw Error('脚本库大小或版本异常');return {rev:m[1],size:Number(m[2])};
+ const s=(await exec(libCmd+'info')).trim();
+ const m=/^CX_LIBRARY_V2:([a-f0-9]{64}):(\d+)$/im.exec(s)||/^([a-f0-9]{64})\s+(\d+)$/im.exec(s);
+ if(!m)throw Error('脚本库协议异常（info）：'+(s.slice(0,180)||'无返回内容'));
+ const size=Number(m[2]);if(!Number.isSafeInteger(size)||size<1||size>limit)throw Error('脚本库大小异常：'+m[2]);
+ return {rev:m[1].toLowerCase(),size};
 }
 async function loadLibrary(){
  if(libBusy)return;if(libDirty&&!confirm('放弃未保存的脚本修改？'))return;
@@ -49,7 +53,7 @@ async function loadLibrary(){
    let offset=0;for(let i=0;offset<bytes.length;i++){const raw=atob((await exec(libCmd+'read '+i)).trim());if(!raw.length||offset+raw.length>bytes.length)throw Error('读取分片异常');for(let j=0;j<raw.length;j++)bytes[offset++]=raw.charCodeAt(j);}
    const last=await info();if(first.rev!==last.rev)throw Error('脚本库发生变化，请重新读取');
    libraryRecords=validateLibrary(JSON.parse(decoder.decode(bytes)));libRevision=first.rev;libDirty=false;libStatus('脚本库已连接');
- }catch(e){libStatus('读取失败：'+e.message);}
+ }catch(e){libRevision='';libStatus('读取失败：'+e.message);}
  finally{libBusy=false;renderLibrary();}
 }
 async function saveLibrary(){
@@ -61,8 +65,10 @@ async function saveLibrary(){
    token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
    await exec(libCmd+'begin '+token);
    for(let i=0;i<bytes.length;i+=16384){libStatus('保存中 '+Math.floor(i/bytes.length*100)+'%');await exec(libCmd+'chunk '+token+' '+i+' '+b64(bytes.subarray(i,i+16384)));}
-   const reply=(await exec(libCmd+'commit '+token+' '+libRevision+' '+bytes.length)).trim();if(!/^[a-f0-9]{64}$/.test(reply))throw Error('保存未确认');
-   libRevision=reply;libDirty=false;libStatus('已保存，请重启目标浏览器');
+   const reply=(await exec(libCmd+'commit '+token+' '+libRevision+' '+bytes.length)).trim();
+   const ack=/^CX_SAVED:([a-f0-9]{64})$/im.exec(reply)||/^([a-f0-9]{64})$/im.exec(reply);
+   if(!ack)throw Error('保存未确认：'+(reply.slice(0,180)||'无返回内容'));
+   libRevision=ack[1].toLowerCase();libDirty=false;libStatus('已保存，请重启目标浏览器');
  }catch(e){if(token)try{await exec(libCmd+'abort '+token);}catch(_){}libStatus('保存失败：'+e.message);}
  finally{libBusy=false;renderLibrary();}
 }

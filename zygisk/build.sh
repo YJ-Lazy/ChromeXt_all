@@ -26,6 +26,7 @@ pathlib.Path("zygisk/build/module/supported.list").write_text("\n".join(packages
 PY
 node --check zygisk/build/module/webroot/app.js
 node --check zygisk/build/module/webroot/library.js
+bash zygisk/test-library.sh
 cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
 cp zygisk/build/native/cx-snapshot zygisk/build/module/cx-snapshot
 chmod 755 zygisk/build/module/cx-snapshot
