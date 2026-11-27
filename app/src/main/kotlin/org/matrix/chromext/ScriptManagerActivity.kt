@@ -97,7 +97,9 @@ class ScriptManagerActivity : Activity() {
     root.addView(LinearLayout(this).apply {
       gravity = android.view.Gravity.CENTER_VERTICAL
       addView(ImageView(this@ScriptManagerActivity).apply { setImageResource(R.mipmap.ic_launcher) },LinearLayout.LayoutParams(dp(48),dp(48)).apply { rightMargin=dp(12) })
-      addView(column().apply { addView(label("ScriptHub",27f,true)); addView(label("跨浏览器脚本管理",12f)) },LinearLayout.LayoutParams(0,-2,1f))
+      addView(column().apply { addView(label("ScriptHub",27f,true)); addView(label("跨浏览器脚本管理",12f)); addView(label("共享配置状态",11f).apply {
+        setOnClickListener { Toast.makeText(this@ScriptManagerActivity, PolicyPublisher.status, Toast.LENGTH_LONG).show(); PolicyPublisher.request() }
+      }) },LinearLayout.LayoutParams(0,-2,1f))
       addView(column().apply { addView(label("v"+BuildConfig.VERSION_NAME,12f).apply { setTextColor(accent) }); addView(action("设置") { gestureSettings() }) },LinearLayout.LayoutParams(-2,-2))
     })
     root.addView(View(this),LinearLayout.LayoutParams(1,dp(14)))
@@ -156,7 +158,7 @@ class ScriptManagerActivity : Activity() {
       root.requestApplyInsets()
     }
   }
-  override fun onResume() { super.onResume(); refresh() }
+  override fun onResume() { super.onResume(); PolicyPublisher.request(); refresh() }
 
 
   private var exportData: String? = null

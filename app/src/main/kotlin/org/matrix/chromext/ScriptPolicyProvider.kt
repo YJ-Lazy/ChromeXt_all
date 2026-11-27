@@ -161,8 +161,21 @@ class ScriptPolicyProvider : ContentProvider() {
 
 object ScriptPolicy {
   @Synchronized
-  fun disabled(scripts: List<org.matrix.chromext.script.Script>, remove: (String) -> Unit, accept: (String, String) -> Boolean): Set<String> {
+  fun disabled(scripts: List<org.matrix.chromext.script.Script>, remove: (String) -> Unit,
+      currentScripts: () -> List<org.matrix.chromext.script.Script>,
+      accept: (String, String) -> Boolean): Set<String> {
+    val ctx = Chrome.getContext()
     val blockOnFailure = scripts.map { it.id }.toMutableSet()
+    var sharedResult: PolicySnapshot.Result? = null
+    runCatching {
+      val data = PolicySnapshot.read()
+      if (data != null) {
+        val result = PolicySnapshot.apply(data, ctx.packageName, scripts, remove, accept)
+        sharedResult = result
+        PolicySnapshot.remember(ctx, currentScripts(), result.blocked)
+        if (!result.unknown) return result.blocked
+      }
+    }.onFailure { org.matrix.chromext.utils.Log.ex(it, "[CX-POLICY] shared snapshot unavailable") }
     return runCatching {
       val ids = scripts.map { it.id }
       val resolver = Chrome.getContext().contentResolver
@@ -265,11 +278,21 @@ object ScriptPolicy {
           if (!accept(id, assigned.getString(id))) blocked.add(id)
         }
         org.matrix.chromext.utils.Log.d("[CX-POLICY] sync acknowledged; pending=${pendingIds.size}; blocked=${blocked.size}")
+        PolicySnapshot.remember(ctx, currentScripts(), blocked)
         blocked.toSet()
       } finally {
         provider.close()
       }
-    }.onFailure { org.matrix.chromext.utils.Log.ex(it, "[CX-POLICY] sync failed; blocking scripts") }
-        .getOrElse { blockOnFailure.toSet() }
+    }.getOrElse { error ->
+      org.matrix.chromext.utils.Log.ex(error, "[CX-POLICY] provider sync failed")
+      // A rejected caller is not an offline condition. Do not bypass explicit denial.
+      if (generateSequence(error) { it.cause }.any { it is SecurityException }) {
+        PolicySnapshot.invalidate(ctx)
+        currentScripts().map { it.id }.toSet()
+      } else {
+        val cached = PolicySnapshot.offline(ctx, currentScripts())
+        cached + (sharedResult?.blocked ?: emptySet())
+      }
+    }
   }
 }

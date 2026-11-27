@@ -112,7 +112,7 @@ object ScriptDbManager {
   }
 
   fun invokeScript(url: String, webView: Any? = null, frameId: String? = null) {
-    val disabled = org.matrix.chromext.ScriptPolicy.disabled(scripts.toList(), { id -> remove(id) }) { id, source ->
+    val disabled = org.matrix.chromext.ScriptPolicy.disabled(scripts.toList(), { id -> remove(id) }, { scripts.toList() }) { id, source ->
       val parsed = parseScript(source)
       if (parsed != null && parsed.id == id) {
         insert(parsed)
