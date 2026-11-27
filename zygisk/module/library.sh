@@ -18,12 +18,17 @@ size() {
   case "$1" in ''|*[!0-9]*) fail "Invalid byte count";; esac
   printf '%s' "$1"
 }
-hash() {
-  result="$(tool sha256sum "$f")" || fail "SHA256 failed"
+# mksh and other Android shells reserve the builtin name "hash".
+# Use a private name, and hash stdin to avoid parsing a pathname.
+cx_validate_digest() {
+  case "$1" in ''|*[!a-f0-9]*) fail "Invalid SHA256 output";; esac
+  [ "${#1}" = 64 ] || fail "Invalid SHA256 length"
+}
+cx_library_digest() {
+  result="$(tool sha256sum < "$1")" || fail "SHA256 failed"
   set -- $result
   digest="${1:-}"
-  case "$digest" in ''|*[!a-f0-9]*) fail "Invalid SHA256 output";; esac
-  [ "${#digest}" = 64 ] || fail "Invalid SHA256 length"
+  cx_validate_digest "$digest"
   printf '%s' "$digest"
 }
 # Repair missing or zero-byte initialization only. Never overwrite a nonempty library.
@@ -43,7 +48,8 @@ validtoken() { case "$1" in ''|*[!a-f0-9]*) exit 1;; esac; [ "${#1}" = 32 ] || e
 active() { [ ! -d /data/adb/modules_update/chromext_zygisk ] && [ ! -e "$d/disable" ] && [ ! -e "$d/remove" ] || { echo "Module update pending or disabled; reboot first" >&2; exit 1; }; }
 case "${1:-}" in
  info)
-   revision="$(hash)" || exit 1
+   revision="$(cx_library_digest "$f")" || exit 1
+   cx_validate_digest "$revision"
    bytes="$(size "$f")" || exit 1
    [ "$bytes" -gt 0 ] && [ "$bytes" -le "$max" ] || fail "Library exceeds allowed size: $bytes"
    printf 'CX_LIBRARY_V2:%s:%s\n' "$revision" "$bytes"
@@ -69,9 +75,13 @@ case "${1:-}" in
    active; validtoken "$2"; number "$4"
    t="$d/.library-$2/data"; [ -f "$t" ] && [ ! -L "$t" ] || exit 1
    [ "$4" -gt 0 ] && [ "$4" -le "$max" ] && [ "$(size "$t")" = "$4" ] || exit 1
-   [ "$(hash)" = "$3" ] || { echo "Library changed; reload before saving" >&2; exit 1; }
+   cx_validate_digest "$3"
+   current="$(cx_library_digest "$f")" || exit 1
+   cx_validate_digest "$current"
+   [ "$current" = "$3" ] || fail "Library changed; reload before saving"
+   revision="$(cx_library_digest "$t")" || exit 1
+   cx_validate_digest "$revision"
    chown 0:0 "$t"; chmod 600 "$t"; mv -f "$t" "$f"; rmdir "$d/.library-$2"
-   revision="$(hash)" || exit 1
    printf 'CX_SAVED:%s\n' "$revision"
    ;;
  abort) validtoken "$2"; rm -f "$d/.library-$2/data"; rmdir "$d/.library-$2" 2>/dev/null || true ;;
