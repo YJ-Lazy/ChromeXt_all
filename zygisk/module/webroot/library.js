@@ -45,14 +45,38 @@ async function info(){
  const size=Number(m[2]);if(!Number.isSafeInteger(size)||size<1||size>limit)throw Error('脚本库大小异常：'+m[2]);
  return {rev:m[1].toLowerCase(),size};
 }
+// Batch reads over the manager bridge. Fall back on truncated or rejected responses.
+async function readBytes(command,size,status){
+ const bytes=new Uint8Array(size);let offset=0,blocks=8;
+ while(offset<size){
+   const expected=Math.min(blocks*16384,size-offset);
+   try{
+     const raw=atob((await exec(command+' '+(offset/16384)+' '+blocks)).trim());
+     if(raw.length!==expected)throw Error('读取分片长度不符：'+raw.length+'/'+expected);
+     for(let j=0;j<raw.length;j++)bytes[offset+j]=raw.charCodeAt(j);
+     offset+=raw.length;
+     status(Math.floor(offset/size*100));
+   }catch(e){
+     if(blocks===1)throw e;
+     blocks=blocks===8?4:1;
+   }
+ }
+ return bytes;
+}
 async function loadLibrary(){
  if(libBusy)return;if(libDirty&&!confirm('放弃未保存的脚本修改？'))return;
  libBusy=true;libControls();libStatus('正在读取脚本库…');
  try{
-   const first=await info(),bytes=new Uint8Array(first.size);
-   let offset=0;for(let i=0;offset<bytes.length;i++){const raw=atob((await exec(libCmd+'read '+i)).trim());if(!raw.length||offset+raw.length>bytes.length)throw Error('读取分片异常');for(let j=0;j<raw.length;j++)bytes[offset++]=raw.charCodeAt(j);}
-   const last=await info();if(first.rev!==last.rev)throw Error('脚本库发生变化，请重新读取');
-   libraryRecords=validateLibrary(JSON.parse(decoder.decode(bytes)));libRevision=first.rev;libDirty=false;libStatus('脚本库已连接');
+   const started=performance.now(),first=await info();
+   const bytes=await readBytes(libCmd+'read',first.size,p=>libStatus('正在读取脚本库 '+p+'%'));
+   const last=await info();if(first.rev!==last.rev||first.size!==last.size)throw Error('脚本库发生变化，请重新读取');
+   // Verify bytes where Web Crypto is supported (some manager WebViews lack subtle).
+   if(globalThis.crypto&&crypto.subtle){
+     const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+     if(digest!==first.rev)throw Error('脚本库校验失败，请重新读取');
+   }
+   libraryRecords=validateLibrary(JSON.parse(decoder.decode(bytes)));libRevision=first.rev;libDirty=false;
+   libStatus('脚本库已连接 · '+libraryRecords.filter(r=>!r.deleted).length+' 个脚本 · '+((performance.now()-started)/1000).toFixed(1)+' 秒');
  }catch(e){libRevision='';libStatus('读取失败：'+e.message);}
  finally{libBusy=false;renderLibrary();}
 }
@@ -86,8 +110,7 @@ async function syncLocal(){
     token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
     const size=Number((await exec(libCmd+'local-begin '+token+' '+r.pkg)).trim());
     if(!Number.isInteger(size)||size<1||size>limit)throw Error('快照大小异常');
-    const bytes=new Uint8Array(size);let offset=0;
-    for(let i=0;offset<size;i++){const raw=atob((await exec(libCmd+'local-read '+token+' '+i)).trim());if(!raw.length||offset+raw.length>size)throw Error('快照分片异常');for(let j=0;j<raw.length;j++)bytes[offset++]=raw.charCodeAt(j);}
+    const bytes=await readBytes(libCmd+'local-read '+token,size,p=>libStatus('正在同步 '+(labels[r.pkg]||r.pkg)+' '+p+'%'));
     const data=JSON.parse(decoder.decode(bytes));
     if(data.format!=='ChromeXt-local-v1'||data.package!==r.pkg||!Array.isArray(data.scripts)||data.scripts.length>5000)throw Error('快照格式异常');
     for(const item of data.scripts){

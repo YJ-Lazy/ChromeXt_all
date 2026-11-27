@@ -49,6 +49,12 @@ if [ ! -e "$f" ] || { [ -f "$f" ] && [ ! -s "$f" ]; }; then
 fi
 [ -f "$f" ] && [ -s "$f" ] || fail "Library missing or unreadable"
 number() { case "$1" in ''|*[!0-9]*) exit 1;; esac; [ "${#1}" -le 8 ] || exit 1; }
+# Preserve the legacy 16 KiB offset unit; batch at most eight blocks.
+read_blocks() {
+  number "$2"; [ "$2" -lt 1024 ] || exit 1
+  case "$3" in 1|4|8) ;; *) fail "Invalid read block count";; esac
+  dd if="$1" bs=16384 skip="$2" count="$3" 2>/dev/null | base64 | tr -d '\r\n'
+}
 validtoken() { case "$1" in ''|*[!a-f0-9]*) exit 1;; esac; [ "${#1}" = 32 ] || exit 1; }
 active() { [ ! -d /data/adb/modules_update/chromext_zygisk ] && [ ! -e "$d/disable" ] && [ ! -e "$d/remove" ] || { echo "Module update pending or disabled; reboot first" >&2; exit 1; }; }
 case "${1:-}" in
@@ -60,8 +66,7 @@ case "${1:-}" in
    printf 'CX_LIBRARY_V2:%s:%s\n' "$revision" "$bytes"
    ;;
  read)
-   number "$2"; [ "$2" -le 1024 ] || exit 1
-   dd if="$f" bs=16384 skip="$2" count=1 2>/dev/null | base64 | tr -d '\r\n'
+   read_blocks "$f" "$2" "${3:-1}"
    ;;
  begin)
    active; validtoken "$2"; umask 077
@@ -104,9 +109,9 @@ case "${1:-}" in
    size "$t"; printf '\n'
    ;;
  local-read)
-   validtoken "$2"; number "$3"; [ "$3" -le 1024 ] || exit 1
+   validtoken "$2"
    t="$d/.snapshot-$2/data"; [ -f "$t" ] && [ ! -L "$t" ] || exit 1
-   dd if="$t" bs=16384 skip="$3" count=1 2>/dev/null | base64 | tr -d '\r\n'
+   read_blocks "$t" "$3" "${4:-1}"
    ;;
  local-end) validtoken "$2"; rm -f "$d/.snapshot-$2/data"; rmdir "$d/.snapshot-$2" 2>/dev/null || true ;;
  logs) logcat -d -t 2500 -v threadtime -s CXDiagnostics:V ChromeXt-Zygisk:V CXStandalone:V ;;

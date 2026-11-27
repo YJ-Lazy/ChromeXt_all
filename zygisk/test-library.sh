@@ -36,4 +36,15 @@ run abort "$token"
 test "$(run info)" = "CX_LIBRARY_V2:$expected_new:${#data}"
 sudo truncate -s 0 "$tmp/library.json"
 test "$(run info)" = "$info"
-echo "Library initialization, read, save and empty recovery passed."
+# Large, non-aligned file: verify all supported batch widths and exact tail.
+python3 -c 'import sys; sys.stdout.buffer.write(bytes(range(251))*1300)' | sudo tee "$tmp/library.json" >/dev/null
+for blocks in 1 4 8; do
+    chunk_bytes=$((16384 * blocks))
+    for ((offset=0;offset<326300;offset+=chunk_bytes)); do
+        run read "$((offset / 16384))" "$blocks" | base64 -d > "$tmp/actual"
+        sudo dd if="$tmp/library.json" bs=16384 skip="$((offset / 16384))" count="$blocks" status=none > "$tmp/expected"
+        cmp "$tmp/actual" "$tmp/expected"
+    done
+done
+if run read 0 9; then echo "Oversized batch accepted" >&2; exit 1; fi
+echo "Library initialization, read, save, empty recovery and batched reads passed."
