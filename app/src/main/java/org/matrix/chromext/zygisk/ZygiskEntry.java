@@ -14,14 +14,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ZygiskEntry {
     private static final AtomicBoolean started = new AtomicBoolean();
     private ZygiskEntry() {}
+    private static native void markStage(int stage);
 
     public static boolean install(String process, byte[] resources, byte[] library) {
         try {
+            markStage(1);
             Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] Java entry reached: " + process);
             if (!XposedBridge.initialize()) {
                 Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] LSPlant initialization failed");
                 return false;
             }
+            markStage(2);
             Method attach = XposedBridge.applicationAttachNative();
             if (attach == null) throw new IllegalStateException("Application.attach unavailable");
             XposedBridge.hookMethod(attach, new XC_MethodHook() {
@@ -29,6 +32,7 @@ public final class ZygiskEntry {
                     Context context = (Context) p.args[0];
                     if (!process.equals(context.getPackageName()) || !started.compareAndSet(false, true)) return;
                     try {
+                        markStage(4);
                         Application app = (Application) p.thisObject;
                         Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] Application.attach reached: " + process);
                         // JS assets do not depend on PackageManager, hidden resource APIs, or writable APK files.
@@ -43,20 +47,27 @@ public final class ZygiskEntry {
                         } catch (Throwable e) {
                             Log.w("ChromeXt-Zygisk", "[CX-RES] optional Android UI resource cache unavailable", e);
                         }
+                        markStage(5);
                         org.matrix.chromext.ScriptPolicy.INSTANCE.initialize(library);
+                        markStage(6);
                         LogRecorder.INSTANCE.initialize(app);
                         org.matrix.chromext.utils.Log.INSTANCE.i("[CX-ZYGISK] standalone runtime; process=" + process);
                         Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] BrowserRuntime load starting: " + process);
+                        markStage(7);
                         BrowserRuntime.INSTANCE.load(process, process, app.getClassLoader(), app);
+                        markStage(8);
                         Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] BrowserRuntime load returned: " + process);
                     } catch (Throwable e) {
+                        markStage(10);
                         Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] standalone resource or browser initialization failed", e);
                     }
                 }
             });
+            markStage(3);
             Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] Application.attach hook installed");
             return true;
         } catch (Throwable e) {
+            markStage(9);
             Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] bootstrap failed", e);
             return false;
         }

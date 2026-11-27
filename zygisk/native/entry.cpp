@@ -7,6 +7,8 @@
 #include "xdl.h"
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
 #include <unistd.h>
 #include <array>
 #include <cstring>
@@ -22,6 +24,39 @@ std::vector<std::vector<unsigned char>> dexes;
 std::vector<unsigned char> resources, library;
 void* art = nullptr;
 bool ready = false;
+// One anonymous page for the selected browser only. No addresses, source or user data
+// are exposed by the fixed stage name. Mapping survives logcat rotation.
+void* stagePage = MAP_FAILED;
+size_t stageSize = 0;
+void stage(const char* name) {
+    if (stagePage == MAP_FAILED) {
+        long page = sysconf(_SC_PAGESIZE);
+        if (page <= 0) return;
+        stageSize = static_cast<size_t>(page);
+        stagePage = mmap(nullptr, stageSize, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (stagePage == MAP_FAILED) return;
+    }
+    // PR_SET_VMA / PR_SET_VMA_ANON_NAME; use numeric ABI for older NDK headers.
+    if (prctl(0x53564d41, 0UL, reinterpret_cast<unsigned long>(stagePage),
+              static_cast<unsigned long>(stageSize), reinterpret_cast<unsigned long>(name)) != 0)
+        __android_log_print(ANDROID_LOG_WARN, TAG, "[CX-ZYGISK] stage name unavailable: errno=%d", errno);
+}
+void javaStage(JNIEnv*, jclass, jint value) {
+    switch (value) {
+        case 1: stage("cx_stage_java_entry"); break;
+        case 2: stage("cx_stage_attach_installing"); break;
+        case 3: stage("cx_stage_attach_installed"); break;
+        case 4: stage("cx_stage_attach_reached"); break;
+        case 5: stage("cx_stage_resources_ready"); break;
+        case 6: stage("cx_stage_policy_ready"); break;
+        case 7: stage("cx_stage_runtime_start"); break;
+        case 8: stage("cx_stage_runtime_returned"); break;
+        case 9: stage("cx_stage_attach_failed"); break;
+        case 10: stage("cx_stage_runtime_failed"); break;
+        default: break;
+    }
+}
 bool error(JNIEnv* env, const char* stage) {
     if (!env->ExceptionCheck()) return false;
     __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] JNI failure: %s", stage);
@@ -130,8 +165,10 @@ bool readDexes(int dir) {
 }
 jboolean initNative(JNIEnv* env, jclass) {
     if (ready) return JNI_TRUE;
+    stage("cx_stage_lsplant_start");
     art = xdl_open("libart.so", XDL_DEFAULT);
     if (!art) {
+        stage("cx_stage_art_missing");
         __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] libart lookup failed");
         return JNI_FALSE;
     }
@@ -153,6 +190,7 @@ jboolean initNative(JNIEnv* env, jclass) {
         }
     };
     ready = lsplant::Init(env, info);
+    stage(ready ? "cx_stage_lsplant_ready" : "cx_stage_lsplant_failed");
     __android_log_print(ready ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, TAG,
                         "[CX-ZYGISK] LSPlant init=%d", ready);
     return ready ? JNI_TRUE : JNI_FALSE;
@@ -175,6 +213,7 @@ jclass load(JNIEnv* env, jobject loader, jmethodID loadClass, const char* name) 
     return cls;
 }
 void bootstrap(JNIEnv* env, const std::string& process) {
+    stage("cx_stage_bootstrap");
     __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] bootstrap start; dex=%zu", dexes.size());
     jclass cl = env->FindClass("java/lang/ClassLoader");
     jclass buffer = env->FindClass("java/nio/ByteBuffer");
@@ -198,8 +237,10 @@ void bootstrap(JNIEnv* env, const std::string& process) {
         env->DeleteLocalRef(b);
         if (error(env, "dex buffer array")) return;
     }
+    stage("cx_stage_dex_loader_start");
     jobject loader = env->NewObject(memory, ctor, buffers, parent);
-    if (error(env, "in-memory loader") || !loader) return;
+    if (error(env, "in-memory loader") || !loader) { stage("cx_stage_dex_loader_failed"); return; }
+    stage("cx_stage_dex_loader_ready");
     jclass bridge = load(env, loader, loadClass, "de.robv.android.xposed.XposedBridge");
     if (!bridge) return;
     JNINativeMethod natives[] = {
@@ -214,8 +255,19 @@ void bootstrap(JNIEnv* env, const std::string& process) {
         return;
     }
     __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] DEX loader and JNI registration ready");
+    stage("cx_stage_bridge_registered");
     jclass entry = load(env, loader, loadClass, "org.matrix.chromext.zygisk.ZygiskEntry");
-    if (!entry) return;
+    if (!entry) { stage("cx_stage_entry_class_failed"); return; }
+    JNINativeMethod marker[] = {
+        {const_cast<char*>("markStage"), const_cast<char*>("(I)V"), reinterpret_cast<void*>(javaStage)}
+    };
+    const jint markerResult = env->RegisterNatives(entry, marker, 1);
+    const bool markerException = error(env, "register stage marker");
+    if (markerResult != JNI_OK || markerException) {
+        stage("cx_stage_marker_registration_failed");
+        return;
+    }
+    stage("cx_stage_entry_registered");
     jmethodID install = env->GetStaticMethodID(entry, "install", "(Ljava/lang/String;[B[B)Z");
     if (error(env, "entry method") || !install) return;
     jstring name = env->NewStringUTF(process.c_str());
@@ -224,7 +276,7 @@ void bootstrap(JNIEnv* env, const std::string& process) {
     if (error(env, "runtime resources") || !res || !scripts) return;
     jboolean ok = env->CallStaticBooleanMethod(entry, install, name, res, scripts);
     resources.clear(); library.clear();
-    if (error(env, "entry install")) return;
+    if (error(env, "entry install")) { stage("cx_stage_entry_call_failed"); return; }
     __android_log_print(ok ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, TAG,
                         "[CX-ZYGISK] bootstrap=%d; process=%s", ok, process.c_str());
 }
@@ -249,22 +301,30 @@ public:
                 __android_log_print(ANDROID_LOG_DEBUG, TAG, "[CX-ZYGISK] browser subprocess skipped: %s pid=%d", process.c_str(), getpid());
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY); return;
         }
+        stage("cx_stage_candidate");
         __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] candidate process=%s uid=%d", process.c_str(), args->uid);
         int dir = api->getModuleDir();
         if (dir < 0) {
             __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] getModuleDir unavailable for %s", process.c_str());
         }
         if (dir < 0 || !scopeAllows(dir, process)) {
+            stage(dir < 0 ? "cx_stage_module_dir_failed" : "cx_stage_scope_skipped");
             if (dir >= 0) close(dir);
             __android_log_print(ANDROID_LOG_DEBUG, TAG, "[CX-ZYGISK] scope skipped: %s", process.c_str());
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY);
             return;
         }
-        enabled = readDexes(dir) &&
-            readBlob(dir, "payload/resources.bin", resources, 32 * 1024 * 1024) &&
-            readBlob(dir, "library.json", library, 16 * 1024 * 1024);
+        stage("cx_stage_read_dex");
+        const bool dexReady = readDexes(dir);
+        if (dexReady) stage("cx_stage_read_resources");
+        const bool resourcesReady = dexReady && readBlob(dir, "payload/resources.bin", resources, 32 * 1024 * 1024);
+        if (resourcesReady) stage("cx_stage_read_library");
+        enabled = resourcesReady && readBlob(dir, "library.json", library, 16 * 1024 * 1024);
+        if (!enabled) stage(!dexReady ? "cx_stage_dex_read_failed" :
+                            !resourcesReady ? "cx_stage_resource_read_failed" : "cx_stage_library_read_failed");
         close(dir);
         if (enabled) {
+            stage("cx_stage_payload_ready");
             __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] payload ready: dex=%zu resources=%zu library=%zu",
                                 dexes.size(), resources.size(), library.size());
         }
@@ -276,6 +336,7 @@ public:
     }
     void postAppSpecialize(const zygisk::AppSpecializeArgs*) override {
         if (enabled) {
+            stage("cx_stage_post_specialize");
             __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] postAppSpecialize pid=%d process=%s", getpid(), process.c_str());
             bootstrap(env, process);
         }

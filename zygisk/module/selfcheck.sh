@@ -138,6 +138,10 @@ pids="$(tr ' ' '\n' < "$tmp/pids" | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
     if grep -Eiq 'chromext_zygisk|libchromext|memfd:.*chromext' "/proc/$pid/maps" 2>/dev/null; then
       echo '  ChromeXt mapping hint: present'
     else echo '  ChromeXt mapping hint: not visible (not conclusive)'; fi
+    stage="$(grep -oE 'cx_stage_[a-z_]+' "/proc/$pid/maps" 2>/dev/null | sort -u)"
+    printf '  ChromeXt process stage: %s\n' "${stage:-unavailable (not conclusive)}"
+    printf '  PID-specific retained ChromeXt log lines: '
+    "$lc" -d -b main -b system --pid="$pid" -v threadtime 'ChromeXt-Zygisk:V' 'CXDiagnostics:V' 'CXStandalone:V' '*:S' 2>/dev/null | grep -v '^--------- beginning of ' | wc -l
   done
 } >> "$tmp/report"
 awk -v ids="$pids" 'BEGIN{n=split(ids,a," "); for(i=1;i<=n;i++) if(a[i]!="") wanted[a[i]]=1} $3 in wanted {print}' "$tmp/events" > "$tmp/main"

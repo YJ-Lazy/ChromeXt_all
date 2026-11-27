@@ -63,6 +63,8 @@ if [ -s "$d/injection.list" ] && [ -f "$d/supported.list" ]; then
         else
           echo '  ChromeXt mapping hint: not visible (not conclusive)'
         fi
+        stage="$(grep -oE 'cx_stage_[a-z_]+' "/proc/$pid/maps" 2>/dev/null | sort -u)"
+        printf '  ChromeXt process stage: %s\n' "${stage:-unavailable (not conclusive)}"
       else
         echo '  Process mappings unavailable'
       fi
