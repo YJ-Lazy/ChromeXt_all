@@ -38,13 +38,18 @@ jobs:
       run: |
         python3 - <<'PY'
         import glob, zipfile
-        required = {"GM.js", "scripts.js", "editor.js", "editor.css", "devtools.js", "eruda.js", "eruda.css", "encoding.js", "xposed_init"}
+        required = {"GM.js", "scripts.js", "editor.js", "editor.css", "devtools.js", "eruda.js", "eruda.css", "encoding.js",}
         apks = glob.glob("app/build/outputs/apk/*/*.apk")
         assert apks, "No APK found"
         for apk in apks:
             with zipfile.ZipFile(apk) as z:
                 for name in required:
                     assert z.getinfo("assets/" + name).file_size > 0, (apk, name)
+                assert "assets/xposed_init" not in z.namelist(), apk
+                assert z.read("META-INF/xposed/java_init.list").decode().strip() == "org.matrix.chromext.MainHook", apk
+                prop = z.read("META-INF/xposed/module.prop").decode()
+                assert "minApiVersion=102" in prop and "targetApiVersion=102" in prop, apk
+                assert "com.quark.browser" in z.read("META-INF/xposed/scope.list").decode().splitlines(), apk
                 gm = z.read("assets/GM.js").decode()
                 assert "GM.bootstrap" in gm and "globalThis" in gm
                 assert "Kotlin separator" in z.read("assets/scripts.js").decode()

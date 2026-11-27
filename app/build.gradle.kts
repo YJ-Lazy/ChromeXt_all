@@ -6,7 +6,7 @@ android {
 
   defaultConfig {
     applicationId = "org.matrix.chromext"
-    minSdk = 21
+    minSdk = 26
     targetSdk = 35
     versionCode = 24
     versionName = "4.2"
@@ -43,4 +43,4 @@ android {
   }
 }
 
-dependencies { compileOnly("de.robv.android.xposed:api:82") }
+dependencies { compileOnly("io.github.libxposed:api:102.0.0") }

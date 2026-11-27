@@ -1,6 +1,4 @@
-# Xposed/Vector instantiates the entry point reflectively. Keeping only the class
-# does not preserve its no-argument constructor with current R8 versions.
--keep class org.matrix.chromext.MainHook {
-    public <init>();
-}
+# The modern module entry is instantiated by the framework.
+-keep class org.matrix.chromext.MainHook { public <init>(); }
+-dontwarn io.github.libxposed.annotation.**
 -keepattributes SourceFile,LineNumberTable

@@ -1,14 +1,14 @@
 package org.matrix.chromext
 
-import android.app.AndroidAppHelper
 import android.app.Application
 import android.content.Context
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.IXposedHookZygoteInit
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.libxposed.api.XposedModule
+import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import org.matrix.chromext.utils.ModernHookRuntime
 import org.matrix.chromext.hook.BaseHook
 import org.matrix.chromext.hook.ContextMenuHook
 import org.matrix.chromext.hook.FloatingEntryHook
@@ -50,13 +50,35 @@ val supportedPackages =
         "us.spotco.mulch",
     )
 
-class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
-  override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
-    Log.d(lpparam.processName + " started")
+class MainHook : XposedModule() {
+  private var processName = ""
+  private var systemServer = false
+
+  override fun onModuleLoaded(param: ModuleLoadedParam) {
+    processName = param.processName
+    systemServer = param.isSystemServer
+    if (systemServer) return
+    ModernHookRuntime.module = this
+    Resource.init(moduleApplicationInfo.sourceDir)
+    Log.i("[CX-API] modern Xposed API=$apiVersion; framework=$frameworkName; process=$processName")
+  }
+
+  override fun onPackageReady(lpparam: PackageReadyParam) {
+    if (systemServer || !lpparam.isFirstPackage || ModernHookRuntime.module !== this) return
+    initialize(lpparam)
+  }
+
+  private fun currentApplication(): Application? = runCatching {
+    Class.forName("android.app.ActivityThread").getDeclaredMethod("currentApplication")
+        .apply { isAccessible = true }.invoke(null) as? Application
+  }.getOrNull()
+
+  private fun initialize(lpparam: PackageReadyParam) {
+    Log.d(processName + " started")
     if (lpparam.packageName == "org.matrix.chromext") return
     if (lpparam.packageName == "android" || lpparam.packageName == "com.android.systemui") return
     if (lpparam.packageName == "com.quark.browser") {
-      val suffix = lpparam.processName.substringAfter(':', "")
+      val suffix = processName.substringAfter(':', "")
       // These known helper processes do not own browser tabs or the floating UI.
       if (suffix.startsWith("sandboxed_") || suffix.startsWith("privileged_process") ||
           suffix == "gpu_process" || suffix == "channel" || suffix == "MediaPlayerService") return
@@ -65,9 +87,9 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
       Application::class.java.getDeclaredMethod("attach", Context::class.java).hookAfter {
         LogRecorder.initialize(it.thisObject as Application)
       }
-      AndroidAppHelper.currentApplication()?.let { LogRecorder.initialize(it) }
+      currentApplication()?.let { LogRecorder.initialize(it) }
     }.onFailure { Log.ex(it, "Diagnostic initialization failed") }
-    Log.i("[CX-ADAPTER] package=${lpparam.packageName}; process=${lpparam.processName}; sdk=${android.os.Build.VERSION.SDK_INT}")
+    Log.i("[CX-ADAPTER] package=${lpparam.packageName}; process=${processName}; sdk=${android.os.Build.VERSION.SDK_INT}")
     val chromium = runCatching {
       lpparam.classLoader.loadClass("org.chromium.ui.base.WindowAndroid")
     }.getOrNull()
@@ -118,7 +140,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
       }
     } else {
       Log.i("[CX-ADAPTER] trying WebView adapter for ${lpparam.packageName}")
-      val ctx = AndroidAppHelper.currentApplication()
+      val ctx = currentApplication()
 
       Chrome.isMi =
           Chrome.isMi ||
@@ -126,10 +148,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
               lpparam.packageName == "com.android.browser"
       Chrome.isQihoo = lpparam.packageName == "com.qihoo.contents"
 
-      if (ctx == null && Chrome.isMi) return
-      // Wait to get the browser context of Mi Browser
-
-      if (ctx != null && lpparam.packageName != "android") Chrome.init(ctx, ctx.packageName)
+      if (ctx != null) Chrome.init(ctx, ctx.packageName)
 
       // Quark uses UC/U4 WebView rather than android.webkit.WebView or Chromium's
       // WindowAndroid. Its Application may not exist yet during handleLoadPackage, so defer
@@ -144,10 +163,9 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
           return
         }
         var initialized = false
-        attach.hookAfter {
-          if (initialized) return@hookAfter
+        fun initializeQuark(application: Application) {
+          if (initialized) return
           initialized = true
-          val application = it.thisObject as Application
           runCatching {
             Chrome.init(application, lpparam.packageName)
             LogRecorder.initialize(application)
@@ -165,10 +183,14 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             Log.ex(it, "Failed to initialize UC/U4 WebView adapter")
           }
         }
+        if (ctx != null) initializeQuark(ctx)
+        else attach.hookAfter { initializeQuark(it.thisObject as Application) }
         return
       }
 
       if (Chrome.isMi) {
+        fun initializeMi(application: Application) {
+        Chrome.init(application, lpparam.packageName)
         WebViewHook.WebView = Chrome.load("com.miui.webkit.WebView")
         runCatching {
           WebViewHook.ViewClient = Chrome.load("com.android.browser.tab.TabWebViewClient")
@@ -202,13 +224,18 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             }
 
         hookWebView()
+        }
+        if (ctx != null) initializeMi(ctx)
+        else Application::class.java.getDeclaredMethod("attach", Context::class.java).hookAfter {
+          initializeMi(it.thisObject as Application)
+        }
         return
       }
 
       if (Chrome.isQihoo) {
-        WebViewHook.WebView = Chrome.load("com.qihoo.webkit.WebView")
-        WebViewHook.ViewClient = Chrome.load("com.qihoo.webkit.WebViewClient")
-        WebViewHook.ChromeClient = Chrome.load("com.qihoo.webkit.WebChromeClient")
+        WebViewHook.WebView = lpparam.classLoader.loadClass("com.qihoo.webkit.WebView")
+        WebViewHook.ViewClient = lpparam.classLoader.loadClass("com.qihoo.webkit.WebViewClient")
+        WebViewHook.ChromeClient = lpparam.classLoader.loadClass("com.qihoo.webkit.WebChromeClient")
         hookWebView()
         return
       }
@@ -239,10 +266,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
           .onFailure { if (BuildConfig.DEBUG) Log.ex(it) }
     }
     initHooks(WebViewHook, ContextMenuHook)
-  }
-
-  override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
-    Resource.init(startupParam.modulePath)
   }
 
   private fun initHooks(vararg hook: BaseHook) {

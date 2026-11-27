@@ -5,7 +5,7 @@
 
 基于 [ChromeXt](https://github.com/JingMatrix/ChromeXt) 开发的 Android 浏览器用户脚本增强模块，支持夸克 UC/U4 内核及 Chromium 浏览器，并提供独立的脚本管理 APP。
 
-**使用 LSPosed，模块 APP 无需单独授予 Root 权限。Root 仅用于可选的增强日志读取。**
+**LSP 开发版已迁移至现代 libxposed API 102，要求框架支持 API 102（Android 8.0+）。模块 APP 无需单独授予 Root 权限，Root 仅用于可选增强日志读取。旧版 API 82 框架不再适用于此构建。独立 Zygisk 版仍在 zygisk-standalone 分支。**
 
 [下载正式版 APK](https://github.com/YJ-Lazy/ChromeXt_all/releases/latest) · [构建产物（Actions）](https://github.com/YJ-Lazy/ChromeXt_all/actions/workflows/android.yml) · [问题反馈](https://github.com/YJ-Lazy/ChromeXt_all/issues) · [上游英文文档](README.upstream.md)
 
