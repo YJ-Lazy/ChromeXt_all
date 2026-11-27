@@ -57,6 +57,7 @@ object ScriptPolicy {
         }
       }
     }
+    Log.d("[CX-POLICY] browser=$pkg; library=${records.size}; assigned=${records.count { !it.deleted && pkg in it.targets }}; local=${scripts.size}; blocked=${blocked.size}")
     return blocked
   }
   private fun digest(source: String): String = MessageDigest.getInstance("SHA-256")

@@ -31,6 +31,9 @@ case "${1:-}" in
     done
     chown 0:0 "$t"
     chmod 600 "$t"
+    if [ -d /sys/fs/selinux ] && [ -e /sys/fs/selinux/enforce ]; then
+        chcon u:object_r:system_file:s0 "$t" || { echo "Cannot label scope file" >&2; exit 1; }
+    fi
     mv -f "$t" "$d/injection.list"
     printf 'CX_SAVED\n'
     ;;

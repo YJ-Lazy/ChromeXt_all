@@ -80,6 +80,7 @@ object Chrome {
         .onFailure { Log.ex(it, "Failed to initialize HTTP response cache") }
     runCatching { saveRedirectCookie() }
         .onFailure { Log.ex(it, "Optional redirect-cookie hook is unavailable") }
+    runCatching {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val groupId = "org.matrix.chromext"
       val group = NotificationChannelGroup(groupId, "ChromeXt")
@@ -103,6 +104,7 @@ object Chrome {
       notificationManager.createNotificationChannel(default_channel)
       notificationManager.createNotificationChannel(silent_channel)
     }
+    }.onFailure { Log.ex(it, "[CX-INIT] optional notification setup failed") }
   }
 
   private fun setupHttpCache(context: Context) {
@@ -372,6 +374,34 @@ object Chrome {
 
 object Resource {
   private var module_path: String? = null
+  @Volatile private var archiveAssets: Map<String, String> = emptyMap()
+
+  fun initArchive(bytes: ByteArray) {
+    val assets = mutableMapOf<String, String>()
+    var total = 0
+    java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
+      while (true) {
+        val entry = zip.nextEntry ?: break
+        val name = entry.name.removePrefix("assets/")
+        if (!entry.isDirectory && entry.name.startsWith("assets/") && name.matches(Regex("[A-Za-z0-9_.-]+")) && (name.endsWith(".js") || name.endsWith(".css"))) {
+          val out = java.io.ByteArrayOutputStream()
+          val buffer = ByteArray(8192)
+          while (true) {
+            val n = zip.read(buffer)
+            if (n < 0) break
+            total += n
+            require(total <= 32 * 1024 * 1024) { "Runtime asset archive too large" }
+            out.write(buffer, 0, n)
+          }
+          assets[name] = out.toString("UTF-8")
+        }
+        zip.closeEntry()
+      }
+    }
+    require(listOf("GM.js", "scripts.js", "editor.js", "eruda.js", "encoding.js", "devtools.js", "editor.css", "eruda.css").all { !assets[it].isNullOrEmpty() }) { "Runtime JS/CSS assets missing" }
+    archiveAssets = assets.toMap()
+    Log.i("[CX-RES] in-memory assets ready: ${assets.size}")
+  }
 
   fun init(packagePath: String) {
     module_path = packagePath
@@ -399,6 +429,7 @@ object Resource {
   // Read immutable bundled assets from the actual loaded module, never host assets.
   fun readAsset(name: String): String {
     require(name.matches(Regex("[A-Za-z0-9_.-]+")))
+    archiveAssets[name]?.let { return it }
     return runCatching {
       java.util.zip.ZipFile(requireNotNull(module_path)).use { apk ->
         val entry = requireNotNull(apk.getEntry("assets/$name")) { "Missing module asset: $name" }

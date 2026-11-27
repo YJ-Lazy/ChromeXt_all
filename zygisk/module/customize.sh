@@ -19,6 +19,11 @@ fi
 [ -s "$MODPATH/library.json" ] || abort "! Empty library after initialization"
 chown 0:0 "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" || abort "! Cannot set ownership"
 chmod 600 "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" || abort "! Cannot set permissions"
+# Zygisk getModuleDir() requires a directory that zygote can access before specialization.
+# Keep script contents root-only; label only our own module files.
+if [ -x /system/bin/chcon ] || command -v chcon >/dev/null 2>&1; then
+    chcon u:object_r:system_file:s0 "$MODPATH" "$MODPATH/payload" "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" "$MODPATH"/payload/classes*.dex || ui_print "! Cannot set module payload context; see runtime diagnostics"
+fi
 ui_print "- WebUI-only module. No manager APK will be installed."
 ui_print "- Reboot and open ChromeXt Zygisk from the modules page."
 ui_print "- Export scripts from an old manager before manually uninstalling it."

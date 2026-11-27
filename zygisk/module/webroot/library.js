@@ -68,7 +68,7 @@ async function saveLibrary(){
    const reply=(await exec(libCmd+'commit '+token+' '+libRevision+' '+bytes.length)).trim();
    const ack=/^CX_SAVED:([a-f0-9]{64})$/im.exec(reply)||/^([a-f0-9]{64})$/im.exec(reply);
    if(!ack)throw Error('保存未确认：'+(reply.slice(0,180)||'无返回内容'));
-   libRevision=ack[1].toLowerCase();libDirty=false;libStatus('已保存，请重启目标浏览器');
+   libRevision=ack[1].toLowerCase();libDirty=false;const count=libraryRecords.filter(r=>!r.deleted&&r.targets.length>0).length;libStatus('已保存，已分配 '+count+' 个脚本。请强制停止并重新打开目标浏览器'+(count?'':'；尚无已启用脚本，请勾选浏览器'));
  }catch(e){if(token)try{await exec(libCmd+'abort '+token);}catch(_){}libStatus('保存失败：'+e.message);}
  finally{libBusy=false;renderLibrary();}
 }

@@ -24,6 +24,11 @@ cx_validate_digest() {
   case "$1" in ''|*[!a-f0-9]*) fail "Invalid SHA256 output";; esac
   [ "${#1}" = 64 ] || fail "Invalid SHA256 length"
 }
+cx_label_library() {
+  if [ -e /sys/fs/selinux/enforce ]; then
+    chcon u:object_r:system_file:s0 "$1" || fail "Cannot label library file"
+  fi
+}
 cx_library_digest() {
   result="$(tool sha256sum < "$1")" || fail "SHA256 failed"
   set -- $result
@@ -38,7 +43,7 @@ if [ ! -e "$f" ] || { [ -f "$f" ] && [ ! -s "$f" ]; }; then
   umask 077
   t="$(mktemp "$d/.library-init.XXXXXX")" || fail "Cannot create empty library"
   printf '%s' '{"format":"ChromeXt-library-v1","scripts":[]}' > "$t"
-  chown 0:0 "$t"; chmod 600 "$t"
+  chown 0:0 "$t"; chmod 600 "$t"; cx_label_library "$t"
   # Avoid clobbering a library that appeared while initialization was in progress.
   if [ -s "$f" ]; then rm -f "$t"; else mv -f "$t" "$f"; fi
 fi
@@ -81,7 +86,7 @@ case "${1:-}" in
    [ "$current" = "$3" ] || fail "Library changed; reload before saving"
    revision="$(cx_library_digest "$t")" || exit 1
    cx_validate_digest "$revision"
-   chown 0:0 "$t"; chmod 600 "$t"; mv -f "$t" "$f"; rmdir "$d/.library-$2"
+   chown 0:0 "$t"; chmod 600 "$t"; cx_label_library "$t"; mv -f "$t" "$f"; rmdir "$d/.library-$2"
    printf 'CX_SAVED:%s\n' "$revision"
    ;;
  abort) validtoken "$2"; rm -f "$d/.library-$2/data"; rmdir "$d/.library-$2" 2>/dev/null || true ;;

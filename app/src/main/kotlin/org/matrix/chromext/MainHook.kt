@@ -137,8 +137,9 @@ object BrowserRuntime {
             // Quark does not expose Chromium's WindowAndroid/app-menu classes and its
             // selection toolbar does not reliably expose Android ActionMode callbacks.
             // Use a native floating entry attached directly to each UC/U4 WebView instead.
-            initHooks(WebViewHook, FloatingEntryHook)
-            Log.i("UC/U4 WebView adapter and floating ChromeXt entry initialized for Quark")
+            runCatching { initHooks(WebViewHook) }.onFailure { Log.ex(it, "[CX-ADAPTER] UC/U4 WebView Hook failed") }
+            runCatching { initHooks(FloatingEntryHook) }.onFailure { Log.ex(it, "[CX-ADAPTER] floating entry Hook failed") }
+            Log.i("[CX-ADAPTER] UC/U4 WebView=${WebViewHook.isInit}; floating=${FloatingEntryHook.isInit}")
           }.onFailure {
             Log.ex(it, "Failed to initialize UC/U4 WebView adapter")
           }

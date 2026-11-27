@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <array>
 #include <cstring>
+#include <cerrno>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -34,12 +35,18 @@ bool selected(const std::string& process) {
 }
 // A root-owned, bounded allowlist is read before specialization. Missing or malformed
 // configuration means no injection, never "all browsers".
+void ioError(const char* name) {
+    const int e = errno;
+    __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] open %s failed: errno=%d (%s)", name, e, strerror(e));
+}
 bool scopeAllows(int dir, const std::string& process) {
     int fd = openat(dir, "injection.list", O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-    if (fd < 0) return false;
+    if (fd < 0) { ioError("injection.list"); return false; }
     struct stat st{};
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != 0 ||
         (st.st_mode & 0022) || st.st_size < 0 || st.st_size > 8192) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] invalid scope file; uid=%u mode=%o size=%lld",
+                            static_cast<unsigned>(st.st_uid), static_cast<unsigned>(st.st_mode), static_cast<long long>(st.st_size));
         close(fd);
         return false;
     }
@@ -65,10 +72,12 @@ bool scopeAllows(int dir, const std::string& process) {
 }
 bool readBlob(int dir, const char* name, std::vector<unsigned char>& bytes, size_t maximum) {
     int fd = openat(dir, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-    if (fd < 0) return false;
+    if (fd < 0) { ioError(name); return false; }
     struct stat st{};
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != 0 ||
         (st.st_mode & 0022) || st.st_size <= 0 || static_cast<size_t>(st.st_size) > maximum) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] invalid payload %s; uid=%u mode=%o size=%lld",
+                            name, static_cast<unsigned>(st.st_uid), static_cast<unsigned>(st.st_mode), static_cast<long long>(st.st_size));
         close(fd); return false;
     }
     bytes.resize(static_cast<size_t>(st.st_size));
@@ -92,7 +101,10 @@ bool readDexes(int dir) {
     for (int i = 1; i <= 16; ++i) {
         std::string name = "payload/classes" + (i == 1 ? std::string() : std::to_string(i)) + ".dex";
         int fd = openat(dir, name.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-        if (fd < 0) return i > 1 && !dexes.empty();
+        if (fd < 0) {
+            if (i > 1 && !dexes.empty() && errno == ENOENT) return true;
+            ioError(name.c_str()); return false;
+        }
         struct stat st{};
         if (fstat(fd, &st) != 0 || st.st_size < 112 || st.st_size > 32 * 1024 * 1024 ||
             total + st.st_size > 64 * 1024 * 1024) { close(fd); return false; }
@@ -113,7 +125,10 @@ bool readDexes(int dir) {
 jboolean initNative(JNIEnv* env, jclass) {
     if (ready) return JNI_TRUE;
     art = xdl_open("libart.so", XDL_DEFAULT);
-    if (!art) return JNI_FALSE;
+    if (!art) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] libart lookup failed");
+        return JNI_FALSE;
+    }
     lsplant::InitInfo info{
         .inline_hooker = [](void* target, void* hooker) -> void* {
             dobby_dummy_func_t backup = nullptr;
@@ -141,9 +156,9 @@ jobject hookNative(JNIEnv* env, jclass, jobject target, jobject record, jobject 
 }
 jobject attachNative(JNIEnv* env, jclass) {
     jclass app = env->FindClass("android/app/Application");
-    if (!app || error(env, "Application")) return nullptr;
+    if (error(env, "Application") || !app) return nullptr;
     jmethodID attach = env->GetMethodID(app, "attach", "(Landroid/content/Context;)V");
-    if (!attach || error(env, "Application.attach")) return nullptr;
+    if (error(env, "Application.attach") || !attach) return nullptr;
     return env->ToReflectedMethod(app, attach, JNI_FALSE);
 }
 jclass load(JNIEnv* env, jobject loader, jmethodID loadClass, const char* name) {
@@ -214,7 +229,11 @@ public:
         if (error(env, "process name") || !selected(process)) {
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY); return;
         }
+        __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] candidate process=%s uid=%d", process.c_str(), args->uid);
         int dir = api->getModuleDir();
+        if (dir < 0) {
+            __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] getModuleDir unavailable for %s", process.c_str());
+        }
         if (dir < 0 || !scopeAllows(dir, process)) {
             if (dir >= 0) close(dir);
             __android_log_print(ANDROID_LOG_DEBUG, TAG, "[CX-ZYGISK] scope skipped: %s", process.c_str());
@@ -225,8 +244,12 @@ public:
             readBlob(dir, "payload/resources.bin", resources, 32 * 1024 * 1024) &&
             readBlob(dir, "library.json", library, 16 * 1024 * 1024);
         close(dir);
+        if (enabled) {
+            __android_log_print(ANDROID_LOG_INFO, TAG, "[CX-ZYGISK] payload ready: dex=%zu resources=%zu library=%zu",
+                                dexes.size(), resources.size(), library.size());
+        }
         if (!enabled) {
-            dexes.clear();
+            dexes.clear(); resources.clear(); library.clear();
             __android_log_print(ANDROID_LOG_ERROR, TAG, "[CX-ZYGISK] payload missing or invalid");
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY);
         }

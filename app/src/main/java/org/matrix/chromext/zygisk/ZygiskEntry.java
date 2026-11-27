@@ -29,12 +29,19 @@ public final class ZygiskEntry {
                     if (!process.equals(context.getPackageName()) || !started.compareAndSet(false, true)) return;
                     try {
                         Application app = (Application) p.thisObject;
-                        java.io.File cache = new java.io.File(context.getCodeCacheDir(), "chromext-resources.apk");
-                        android.util.AtomicFile file = new android.util.AtomicFile(cache);
-                        java.io.FileOutputStream out = file.startWrite();
-                        try { out.write(resources); file.finishWrite(out); }
-                        catch (Throwable e) { file.failWrite(out); throw e; }
-                        Resource.INSTANCE.init(cache.getAbsolutePath());
+                        Log.i("ChromeXt-Zygisk", "[CX-ZYGISK] Application.attach reached: " + process);
+                        // JS assets do not depend on PackageManager, hidden resource APIs, or writable APK files.
+                        Resource.INSTANCE.initArchive(resources);
+                        try {
+                            java.io.File cache = new java.io.File(context.getCodeCacheDir(), "chromext-resources.apk");
+                            android.util.AtomicFile file = new android.util.AtomicFile(cache);
+                            java.io.FileOutputStream out = file.startWrite();
+                            try { out.write(resources); file.finishWrite(out); }
+                            catch (Throwable e) { file.failWrite(out); throw e; }
+                            Resource.INSTANCE.init(cache.getAbsolutePath());
+                        } catch (Throwable e) {
+                            Log.w("ChromeXt-Zygisk", "[CX-RES] optional Android UI resource cache unavailable", e);
+                        }
                         org.matrix.chromext.ScriptPolicy.INSTANCE.initialize(library);
                         LogRecorder.INSTANCE.initialize(app);
                         org.matrix.chromext.utils.Log.INSTANCE.i("[CX-ZYGISK] standalone runtime; process=" + process);
