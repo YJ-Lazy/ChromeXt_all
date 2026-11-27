@@ -11,7 +11,9 @@ cmake -S zygisk/native -B zygisk/build/native -G Ninja \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static \
   -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
 cmake --build zygisk/build/native --target chromext
-mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses
+rm -rf zygisk/build/module
+rm -f zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
+mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses zygisk/build/module/manager
 cp zygisk/module/* zygisk/build/module/
 cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
 cp LICENSE zygisk/build/module/licenses/ChromeXt-LICENSE
@@ -34,4 +36,26 @@ with zipfile.ZipFile(sys.argv[1]) as z:
         (dest / n).write_bytes(z.read(n))
 PY
 cp "$APK" zygisk/build/ChromeXt-Zygisk-Manager-debug.apk
+cp "$APK" zygisk/build/module/manager/ChromeXt-Zygisk-Manager-debug.apk
+for script in customize.sh service.sh install-manager.sh; do
+  sh -n "zygisk/build/module/$script"
+  chmod 755 "zygisk/build/module/$script"
+done
 (cd zygisk/build/module && zip -qr ../ChromeXt-Zygisk-arm64-exp.zip .)
+python3 - "$APK" <<'PY'
+import io, pathlib, sys, zipfile
+path = pathlib.Path("zygisk/build/ChromeXt-Zygisk-arm64-exp.zip")
+with zipfile.ZipFile(path) as outer:
+    required = {"module.prop", "customize.sh", "service.sh", "install-manager.sh",
+                "zygisk/arm64-v8a.so", "payload/classes.dex",
+                "manager/ChromeXt-Zygisk-Manager-debug.apk"}
+    assert required <= set(outer.namelist()), required - set(outer.namelist())
+    embedded = outer.read("manager/ChromeXt-Zygisk-Manager-debug.apk")
+    assert embedded == pathlib.Path(sys.argv[1]).read_bytes()
+    with zipfile.ZipFile(io.BytesIO(embedded)) as inner:
+        assert "assets/xposed_init" not in inner.namelist()
+        for name in inner.namelist():
+            if name.startswith("classes") and name.endswith(".dex"):
+                assert outer.read("payload/" + name) == inner.read(name), name
+print("Verified embedded manager and native payload:", path)
+PY
