@@ -385,8 +385,14 @@ object Resource {
       android.content.res.Resources(assets, ctx.resources.displayMetrics, ctx.resources.configuration).also {
         it.getString(R.string.main_menu_extension)
       }
-    }.getOrElse {
-      ctx.createPackageContext(BuildConfig.APPLICATION_ID, 0).resources
+    }.getOrElse { original ->
+      if (android.os.Build.VERSION.SDK_INT >= 30) {
+        val provider = android.content.res.loader.ResourcesProvider.loadFromApk(
+            android.os.ParcelFileDescriptor.open(java.io.File(requireNotNull(module_path)), android.os.ParcelFileDescriptor.MODE_READ_ONLY))
+        val loader = android.content.res.loader.ResourcesLoader().apply { addProvider(provider) }
+        ctx.resources.addLoaders(loader)
+        ctx.resources
+      } else throw original
     }
   }
 

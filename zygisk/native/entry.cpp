@@ -18,6 +18,7 @@ namespace {
 constexpr const char* TAG = "ChromeXt-Zygisk";
 constexpr std::array targets{"app.vanadium.browser", "com.android.browser", "com.android.chrome", "com.brave.browser", "com.brave.browser_beta", "com.brave.browser_nightly", "com.chrome.beta", "com.chrome.canary", "com.chrome.dev", "com.coccoc.trinhduyet", "com.coccoc.trinhduyet_beta", "com.herond.android.browser", "com.kiwibrowser.browser", "com.mi.globalbrowser", "com.quark.browser", "com.naver.whale", "com.vivaldi.browser", "com.vivaldi.browser.snapshot", "io.github.jqssun.helium", "org.axpos.aosmium", "org.bromite.bromite", "org.chromium.chrome", "org.chromium.thorium", "org.cromite.cromite", "org.greatfire.freebrowser", "org.triple.banana", "us.spotco.mulch", "com.qihoo.contents"};
 std::vector<std::vector<unsigned char>> dexes;
+std::vector<unsigned char> resources, library;
 void* art = nullptr;
 bool ready = false;
 bool error(JNIEnv* env, const char* stage) {
@@ -61,6 +62,30 @@ bool scopeAllows(int dir, const std::string& process) {
         start = end + 1;
     }
     return match;
+}
+bool readBlob(int dir, const char* name, std::vector<unsigned char>& bytes, size_t maximum) {
+    int fd = openat(dir, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return false;
+    struct stat st{};
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != 0 ||
+        (st.st_mode & 0022) || st.st_size <= 0 || static_cast<size_t>(st.st_size) > maximum) {
+        close(fd); return false;
+    }
+    bytes.resize(static_cast<size_t>(st.st_size));
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        ssize_t n = read(fd, bytes.data() + offset, bytes.size() - offset);
+        if (n <= 0) { close(fd); bytes.clear(); return false; }
+        offset += static_cast<size_t>(n);
+    }
+    close(fd);
+    return true;
+}
+jbyteArray byteArray(JNIEnv* env, const std::vector<unsigned char>& data) {
+    jbyteArray arr = env->NewByteArray(static_cast<jsize>(data.size()));
+    if (arr && !data.empty()) env->SetByteArrayRegion(arr, 0, static_cast<jsize>(data.size()),
+        reinterpret_cast<const jbyte*>(data.data()));
+    return arr;
 }
 bool readDexes(int dir) {
     size_t total = 0;
@@ -163,10 +188,14 @@ void bootstrap(JNIEnv* env, const std::string& process) {
     if (env->RegisterNatives(bridge, natives, 3) != JNI_OK || error(env, "register natives")) return;
     jclass entry = load(env, loader, loadClass, "org.matrix.chromext.zygisk.ZygiskEntry");
     if (!entry) return;
-    jmethodID install = env->GetStaticMethodID(entry, "install", "(Ljava/lang/String;)Z");
+    jmethodID install = env->GetStaticMethodID(entry, "install", "(Ljava/lang/String;[B[B)Z");
     if (error(env, "entry method") || !install) return;
     jstring name = env->NewStringUTF(process.c_str());
-    jboolean ok = env->CallStaticBooleanMethod(entry, install, name);
+    jbyteArray res = byteArray(env, resources);
+    jbyteArray scripts = byteArray(env, library);
+    if (error(env, "runtime resources") || !res || !scripts) return;
+    jboolean ok = env->CallStaticBooleanMethod(entry, install, name, res, scripts);
+    resources.clear(); library.clear();
     if (error(env, "entry install")) return;
     __android_log_print(ok ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, TAG,
                         "[CX-ZYGISK] bootstrap=%d; process=%s", ok, process.c_str());
@@ -192,7 +221,9 @@ public:
             api->setOption(zygisk::DLCLOSE_MODULE_LIBRARY);
             return;
         }
-        enabled = readDexes(dir);
+        enabled = readDexes(dir) &&
+            readBlob(dir, "payload/resources.bin", resources, 32 * 1024 * 1024) &&
+            readBlob(dir, "library.json", library, 16 * 1024 * 1024);
         close(dir);
         if (!enabled) {
             dexes.clear();

@@ -12,7 +12,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Build manager APK with default debug signature
+      - name: Build runtime resource intermediate (not installed)
         run: ./gradlew app:assembleDebug
       - name: Verify no Xposed module entry
         run: |
@@ -55,13 +55,6 @@ jobs:
           "$RUNNER_TEMP/chromext-build-tools/bin/ninja" --version
       - name: Build Zygisk module
         run: bash zygisk/build.sh
-      - name: Upload manager APK for failed builds
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ChromeXt-Zygisk-Manager-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
       - name: Upload directly flashable Zygisk ZIP
         uses: actions/upload-artifact@v7
         with:

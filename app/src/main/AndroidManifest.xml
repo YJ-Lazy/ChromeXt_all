@@ -40,47 +40,5 @@
     <application
         android:icon="@mipmap/ic_launcher"
         android:label="ChromeXt Zygisk">
-        <provider
-            android:name=".DiagnosticsProvider"
-            android:authorities="org.matrix.chromext.diagnostics"
-            android:exported="true" />
-        <provider android:name=".ScriptPolicyProvider"
-            android:authorities="org.matrix.chromext.scriptpolicy"
-            android:exported="true" />
-        <activity android:name=".ScriptManagerActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        <activity
-            android:name=".DiagnosticsActivity"
-            android:label="ScriptHub 诊断日志" android:exported="false" />
-        <activity
-            android:name=".OpenInChrome"
-            android:label="@string/view_in_chrome"
-            android:theme="@android:style/Theme.NoDisplay"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/javascript" android:scheme="content" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/javascript" android:scheme="content" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/html" android:scheme="content" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
     </application>
 </manifest>

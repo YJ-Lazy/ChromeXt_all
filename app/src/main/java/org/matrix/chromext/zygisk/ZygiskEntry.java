@@ -2,12 +2,10 @@ package org.matrix.chromext.zygisk;
 
 import android.app.Application;
 import android.content.Context;
-import android.content.pm.ApplicationInfo;
 import android.util.Log;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import org.matrix.chromext.BrowserRuntime;
-import org.matrix.chromext.BuildConfig;
 import org.matrix.chromext.Resource;
 import org.matrix.chromext.utils.LogRecorder;
 import java.lang.reflect.Method;
@@ -17,7 +15,7 @@ public final class ZygiskEntry {
     private static final AtomicBoolean started = new AtomicBoolean();
     private ZygiskEntry() {}
 
-    public static boolean install(String process) {
+    public static boolean install(String process, byte[] resources, byte[] library) {
         try {
             if (!XposedBridge.initialize()) {
                 Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] LSPlant initialization failed");
@@ -31,14 +29,18 @@ public final class ZygiskEntry {
                     if (!process.equals(context.getPackageName()) || !started.compareAndSet(false, true)) return;
                     try {
                         Application app = (Application) p.thisObject;
-                        Context manager = context.createPackageContext(BuildConfig.APPLICATION_ID, 0);
-                        ApplicationInfo info = manager.getApplicationInfo();
-                        Resource.INSTANCE.init(info.sourceDir);
+                        java.io.File cache = new java.io.File(context.getCodeCacheDir(), "chromext-resources.apk");
+                        android.util.AtomicFile file = new android.util.AtomicFile(cache);
+                        java.io.FileOutputStream out = file.startWrite();
+                        try { out.write(resources); file.finishWrite(out); }
+                        catch (Throwable e) { file.failWrite(out); throw e; }
+                        Resource.INSTANCE.init(cache.getAbsolutePath());
+                        org.matrix.chromext.ScriptPolicy.INSTANCE.initialize(library);
                         LogRecorder.INSTANCE.initialize(app);
                         org.matrix.chromext.utils.Log.INSTANCE.i("[CX-ZYGISK] standalone runtime; process=" + process);
                         BrowserRuntime.INSTANCE.load(process, process, app.getClassLoader(), app);
                     } catch (Throwable e) {
-                        Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] manager or browser initialization failed", e);
+                        Log.e("ChromeXt-Zygisk", "[CX-ZYGISK] standalone resource or browser initialization failed", e);
                     }
                 }
             });

@@ -13,7 +13,7 @@ cmake -S zygisk/native -B zygisk/build/native -G Ninja \
 cmake --build zygisk/build/native --target chromext
 rm -rf zygisk/build/module
 rm -f zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
-mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses zygisk/build/module/manager
+mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses
 cp -a zygisk/module/. zygisk/build/module/
 python3 - <<'PY'
 import pathlib, re
@@ -25,6 +25,7 @@ assert packages and len(packages) == len(set(packages))
 pathlib.Path("zygisk/build/module/supported.list").write_text("\n".join(packages) + "\n")
 PY
 node --check zygisk/build/module/webroot/app.js
+node --check zygisk/build/module/webroot/library.js
 cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
 cp LICENSE zygisk/build/module/licenses/ChromeXt-LICENSE
 for entry in lsplant dobby xdl-wrapper/external/xDL; do
@@ -45,9 +46,9 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     for n in names:
         (dest / n).write_bytes(z.read(n))
 PY
-cp "$APK" zygisk/build/ChromeXt-Zygisk-Manager-debug.apk
-cp "$APK" zygisk/build/module/manager/ChromeXt-Zygisk-Manager-debug.apk
-for script in customize.sh service.sh install-manager.sh scope.sh; do
+# APK is a build intermediate only; the resource archive is not installed.
+cp "$APK" zygisk/build/module/payload/resources.bin
+for script in customize.sh scope.sh library.sh; do
   sh -n "zygisk/build/module/$script"
   chmod 755 "zygisk/build/module/$script"
 done
@@ -56,17 +57,18 @@ python3 - "$APK" <<'PY'
 import io, pathlib, sys, zipfile
 path = pathlib.Path("zygisk/build/ChromeXt-Zygisk-arm64-exp.zip")
 with zipfile.ZipFile(path) as outer:
-    required = {"module.prop", "customize.sh", "service.sh", "install-manager.sh",
+    required = {"module.prop", "customize.sh", "library.sh",
                 "zygisk/arm64-v8a.so", "payload/classes.dex",
-                "manager/ChromeXt-Zygisk-Manager-debug.apk", "supported.list", "scope.sh",
-                "webroot/index.html", "webroot/style.css", "webroot/app.js"}
+                "payload/resources.bin", "supported.list", "scope.sh",
+                "webroot/index.html", "webroot/style.css", "webroot/app.js", "webroot/library.js"}
     assert required <= set(outer.namelist()), required - set(outer.namelist())
-    embedded = outer.read("manager/ChromeXt-Zygisk-Manager-debug.apk")
+    assert not any(n.endswith(".apk") or n.endswith("install-manager.sh") for n in outer.namelist())
+    embedded = outer.read("payload/resources.bin")
     assert embedded == pathlib.Path(sys.argv[1]).read_bytes()
     with zipfile.ZipFile(io.BytesIO(embedded)) as inner:
         assert "assets/xposed_init" not in inner.namelist()
         for name in inner.namelist():
             if name.startswith("classes") and name.endswith(".dex"):
                 assert outer.read("payload/" + name) == inner.read(name), name
-print("Verified embedded manager and native payload:", path)
+print("Verified standalone WebUI and runtime payload:", path)
 PY

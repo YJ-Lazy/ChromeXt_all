@@ -1,15 +1,9 @@
-# ChromeXt 独立 Zygisk 实验版
+# ChromeXt Zygisk · WebUI 独立版
 
-本分支只通过 Zygisk 启动；不提供 Xposed 模块入口，也不依赖 LSPosed APK/服务。master 继续构建原 LSP 版。内部回调类沿用现有 Hook API 的形状，仅供 ChromeXt 自身使用，不是通用 Xposed 框架。
+仅刷入 ARM64 ZIP，无须安装 ChromeXt APK；在 Root 管理器模块列表打开 WebUI。支持浏览器注入范围、脚本库、导入/编辑/删除、按浏览器分配与启停、备份导出、HTTPS 链接更新及日志读取。默认不注入，不默认启用导入脚本。保存后需强制停止目标浏览器再启动；模块在进程启动时加载只读配置快照，不开放新的 Root IPC 服务。浏览器本地 GM 存储保留，原有浏览器内菜单、脚本引擎与 Eruda 保留源码。
 
-- 保留现有 ScriptHub、脚本数据库、浏览器适配、悬浮菜单、开发者工具、脚本同步及资源；运行效果须真机测试。
-- 原生模块限制到明确列出的浏览器主进程，不注入 system_server、渲染/GPU/媒体子进程。首次安装默认不注入任何浏览器。重启后在 KernelSU / KernelSU Next / APatch 模块列表中打开 ChromeXt Zygisk 的 WebUI（类似 Zygisk Next 的打开入口），选择浏览器并保存，再彻底关闭并重新打开对应浏览器即可生效。该设置与脚本分配独立，模块升级保留已选范围。配置缺失或无效时不注入。首轮优先验证夸克 Android 16。
-- 注入范围由模块 WebUI 管理，使用 Root 管理器的 WebUI shell 接口，无需为 ScriptHub APK 单独授予 Root。普通 APK 继续管理脚本、日志和分配。没有 WebUI 的 Root 管理器需要兼容的模块 WebUI 宿主。
-- 首轮产物为 ARM64，Android 8.1+ 加载器（各 Android 版本未验证）；16KB ELF 对齐。
-- 同一 applicationId 保留管理器数据及 Provider 地址，LSP 与 Zygisk APK 是替换关系，不能同时安装。测试 debug APK 的签名与正式 APK 可能不同，请备份脚本再切换，不能覆盖时不要直接清除数据。
-- ZIP 内已包含同一批构建的管理器 APK；在已启动 Android 的 Root 管理器中刷入 ZIP 时自动覆盖安装（用户 0）。若刷入时 Package Manager 不可用，首次正常启动后自动补装一次。开启 Zygisk 后重启，不需要另外下载 APK。
-- 安装使用 Android Package Manager 的签名及版本校验，不卸载旧 APP、不清除数据、不强制降级。签名不一致或安装失败会明确提示；首次启动补装失败时记录到模块目录的 manager-install.log，禁用该模块以免继续使用不匹配的管理器。修正签名或备份迁移后重新刷入。不要对同一浏览器同时启用其他 ChromeXt 注入入口。卸载/禁用 Zygisk 模块并重启即可停止注入；不会自动删除管理器和脚本。
-- 初次测试查看 logcat -s ChromeXt-Zygisk CXDiagnostics。应用内诊断页仍保留，Native 启动失败时需看 logcat。
-- 本分支不是正式发布；CI 验证产物结构不代表真机 Hook 成功。若 manager APK 与 ZIP 不匹配，请重新刷入同一批产物。CI 直接使用 Gradle 默认 debug 签名，不配置额外签名密钥或 Secrets。
+旧管理器内的脚本请先导出 ScriptHub JSON 备份，再在 WebUI 导入。不会自动卸载旧 APP 或清除其数据。旧版浏览器本地脚本不会自动进入 WebUI 库；可通过原始脚本或备份导入。链接获取受 WebUI CORS 限制；文件选择、下载和剪贴板能力取决于管理器 WebUI，提供源码粘贴、文本复制替代。日志来自限定 tag 的 logcat，清空显示不会清除系统日志。资源编译中间件仅作为模块内置 resources.bin，绝不安装。
 
-第三方依赖锁定在 fetch-deps.sh：LSPlant (LGPL-3.0), Dobby, xDL 和 Zygisk API sample。源代码及许可证见对应上游仓库；保留 ChromeXt GPL-3.0。此分支的 Zygisk 模块不替换系统文件、不更改网页安全策略。
+支持 KernelSU 系列 WebUI 宿主；其他兼容宿主待验证。Android 8.1+ ARM64，首轮优先 Android 16。独立 Zygisk + LSPlant，不依赖 LSPosed，master 的 LSP API 102 不受影响。此构建尚需真机验证资源加载、脚本运行与 UI。
+
+第三方依赖锁定在 fetch-deps.sh：LSPlant (LGPL-3.0), Dobby, xDL 和 Zygisk API sample。ChromeXt GPL-3.0。

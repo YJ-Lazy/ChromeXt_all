@@ -1,27 +1,18 @@
 #!/system/bin/sh
-[ "$ARCH" = "arm64" ] || abort "! This experimental build requires arm64-v8a"
+[ "$ARCH" = "arm64" ] || abort "! ARM64 required"
 [ "$API" -ge 27 ] || abort "! Android 8.1 or later required"
-[ -s "$MODPATH/manager/ChromeXt-Zygisk-Manager-debug.apk" ] || abort "! Bundled manager APK missing"
-[ -f "$MODPATH/install-manager.sh" ] || abort "! Manager installer missing"
-# Keep scope on module upgrades. A fresh installation is opt-in.
-OLD_SCOPE="/data/adb/modules/chromext_zygisk/injection.list"
-if [ "$MODPATH/injection.list" != "$OLD_SCOPE" ] && [ -f "$OLD_SCOPE" ] && [ ! -L "$OLD_SCOPE" ]; then
-    cp "$OLD_SCOPE" "$MODPATH/injection.list" || abort "! Cannot preserve browser injection scope"
-elif [ ! -f "$MODPATH/injection.list" ]; then
-    : > "$MODPATH/injection.list" || abort "! Cannot initialize browser injection scope"
-fi
-chown 0:0 "$MODPATH/injection.list" || abort "! Cannot set scope owner"
-chmod 600 "$MODPATH/injection.list" || abort "! Cannot set scope permissions"
-ui_print "- Installing bundled ChromeXt Zygisk manager..."
-if [ "$BOOTMODE" = true ] && pm path android >/dev/null 2>&1; then
-    RESULT="$(sh "$MODPATH/install-manager.sh" "$MODPATH" 2>&1)"
-    STATUS=$?
-    ui_print "$RESULT"
-    [ "$STATUS" -eq 0 ] || abort "! Manager installation failed. Back up scripts and resolve APK signature/version mismatch before retrying."
-    rm -f "$MODPATH/.manager-install-pending"
-else
-    touch "$MODPATH/.manager-install-pending" || abort "! Cannot schedule manager installation"
-    ui_print "- Android Package Manager unavailable; install manager automatically after boot."
-fi
-ui_print "- Disable other ChromeXt/Xposed injection for the same browser."
-ui_print "- Reboot, then open ChromeXt Zygisk WebUI from your root manager modules page."
+[ -s "$MODPATH/payload/resources.bin" ] || abort "! Runtime resources missing"
+[ -f "$MODPATH/webroot/index.html" ] || abort "! WebUI missing"
+OLD=/data/adb/modules/chromext_zygisk
+for name in injection.list library.json; do
+    if [ "$MODPATH" != "$OLD" ] && [ -f "$OLD/$name" ] && [ ! -L "$OLD/$name" ]; then
+        cp "$OLD/$name" "$MODPATH/$name" || abort "! Cannot preserve $name"
+    fi
+done
+[ -f "$MODPATH/injection.list" ] || : > "$MODPATH/injection.list"
+[ -s "$MODPATH/library.json" ] || printf '%s' '{"format":"ChromeXt-library-v1","scripts":[]}' > "$MODPATH/library.json"
+chown 0:0 "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" || abort "! Cannot set ownership"
+chmod 600 "$MODPATH/injection.list" "$MODPATH/library.json" "$MODPATH/payload/resources.bin" || abort "! Cannot set permissions"
+ui_print "- WebUI-only module. No manager APK will be installed."
+ui_print "- Reboot and open ChromeXt Zygisk from the modules page."
+ui_print "- Export scripts from an old manager before manually uninstalling it."
