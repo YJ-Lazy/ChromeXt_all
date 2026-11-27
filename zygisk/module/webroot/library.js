@@ -150,6 +150,16 @@ $('editor-cancel').addEventListener('click',()=>{$('editor').hidden=true;});$('e
 $('script-file').addEventListener('change',async()=>{try{const files=[...$('script-file').files];if(files.reduce((s,f)=>s+f.size,0)>limit)throw Error('文件超过 16 MiB');const sources=[];for(const f of files)sources.push(...importSources(await f.text()));$('source').value=sources.length===1?sources[0]:JSON.stringify({format:'ScriptHub-scripts-v1',scripts:sources});}catch(e){libStatus('文件读取失败：'+e.message);}});
 $('export-close').addEventListener('click',()=>{$('export-panel').hidden=true;});$('export-copy').addEventListener('click',()=>copyText($('export-text')));
 $('export-download').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([$('export-text').value],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=exportName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-async function readLogs(){try{$('logs-text').value=await exec(libCmd+'logs');}catch(e){$('logs-text').value='读取失败：'+e.message;}}
+let diagnosticsBusy=false;
+async function readLogs(){
+ if(diagnosticsBusy)return;
+ diagnosticsBusy=true;$('logs-refresh').disabled=true;
+ $('logs-text').value='正在读取模块状态与运行日志…';
+ try{
+   const data=await exec('sh /data/adb/modules/chromext_zygisk/diagnostics.sh');
+   $('logs-text').value=data.trim()||'诊断命令未返回内容，请检查 Root 管理器 WebUI 执行接口。';
+ }catch(e){$('logs-text').value='读取失败：'+e.message;}
+ finally{diagnosticsBusy=false;$('logs-refresh').disabled=false;}
+}
 $('logs-refresh').addEventListener('click',readLogs);$('logs-copy').addEventListener('click',()=>copyText($('logs-text')));$('logs-clear').addEventListener('click',()=>{$('logs-text').value='';});
 tab('scope');
