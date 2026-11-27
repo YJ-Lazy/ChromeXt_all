@@ -182,12 +182,12 @@ function refreshSelfTargets(){
  for(const r of choices){const opt=document.createElement('option');opt.value=r.pkg;opt.textContent=labels[r.pkg]||r.pkg;select.append(opt);}
  if(choices.some(r=>r.pkg===old))select.value=old;
  else if(choices.some(r=>r.pkg==='com.quark.browser'))select.value='com.quark.browser';
- $('self-run').disabled=diagnosticsBusy||!select.value;
+ $('self-run').disabled=$('self-manual-start').disabled=$('self-manual-finish').disabled=diagnosticsBusy||!select.value;
 }
 function diagnosticsControls(){
  $('logs-refresh').disabled=$('self-read').disabled=diagnosticsBusy;
  $('self-target').disabled=diagnosticsBusy;
- $('self-run').disabled=diagnosticsBusy||!$('self-target').value;
+ $('self-run').disabled=$('self-manual-start').disabled=$('self-manual-finish').disabled=diagnosticsBusy||!$('self-target').value;
 }
 async function selfCheck(run){
  if(diagnosticsBusy)return;
@@ -203,6 +203,19 @@ async function selfCheck(run){
 }
 $('self-run').addEventListener('click',()=>selfCheck(true));
 $('self-read').addEventListener('click',()=>selfCheck(false));
+async function manualCapture(start){
+ if(diagnosticsBusy)return;
+ const pkg=$('self-target').value;
+ if(!/^[A-Za-z0-9_.]+$/.test(pkg)||!saved.has(pkg))return;
+ diagnosticsBusy=true;diagnosticsControls();
+ try{
+   const data=await exec(selfCommand+(start?'manual-start ':'manual-finish ')+pkg);
+   $('logs-text').value=(start?'已记录起点。请从系统应用信息强行停止浏览器，再从桌面打开并访问网页，返回后点击结束手动采集。\n\n':'')+data.trim();
+ }catch(e){$('logs-text').value='手动采集：'+e.message;}
+ finally{diagnosticsBusy=false;diagnosticsControls();}
+}
+$('self-manual-start').addEventListener('click',()=>manualCapture(true));
+$('self-manual-finish').addEventListener('click',()=>manualCapture(false));
 async function readLogs(){
  if(diagnosticsBusy)return;
  diagnosticsBusy=true;diagnosticsControls();

@@ -2,6 +2,7 @@
 # User-initiated, bounded cold-start capture; never clears logcat or app data.
 d="${0%/*}"
 last="$d/selfcheck-last.log"
+manual="$d/selfcheck-manual.state"
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || fail "Root WebUI required"
 umask 077
@@ -9,16 +10,38 @@ case "${1:-}" in
   read)
     [ -f "$last" ] && [ ! -L "$last" ] || fail "No completed self-check yet"
     cat "$last"; exit ;;
-  run) ;;
+  run|manual-start|manual-finish) ;;
   *) fail "Unknown self-check command";;
 esac
 pkg="${2:-}"
 case "$pkg" in ''|*[!A-Za-z0-9_.]*) fail "Invalid package";; esac
 [ ! -e "$d/disable" ] && [ ! -e "$d/remove" ] && [ ! -d /data/adb/modules_update/chromext_zygisk ] || fail "Module disabled or update pending; reboot first"
 grep -Fxq "$pkg" "$d/supported.list" && grep -Fxq "$pkg" "$d/injection.list" || fail "Browser is not in saved injection scope"
+mode="$1"
+lc=/system/bin/logcat
+[ -x "$lc" ] || lc=logcat
+boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)"
+if [ "$mode" = manual-start ]; then
+  stamp="$(date '+%m-%d %H:%M:%S.000')"
+  old="$(pidof "$pkg" 2>/dev/null || true)"
+  state="$(mktemp "$d/.selfcheck-state.XXXXXX")" || fail "Cannot create manual state"
+  printf '%s\n' "$pkg" "$boot" "$stamp" "$old" > "$state"
+  mv -f "$state" "$manual" || fail "Cannot save manual state"
+  printf 'Manual capture armed: %s\nStart: %s\nPrevious main PIDs: %s\nForce-stop the browser from Android App info, open it from the launcher, visit a page, then return and finish manual capture.\n' "$pkg" "$stamp" "${old:-none}"
+  exit
+fi
+if [ "$mode" = manual-finish ]; then
+  [ -f "$manual" ] && [ ! -L "$manual" ] || fail "Start manual capture first"
+  { IFS= read -r target; IFS= read -r previous_boot; IFS= read -r stamp; IFS= read -r old; } < "$manual"
+  [ "$target" = "$pkg" ] || fail "Select the same browser as at capture start"
+  [ "$boot" = "$previous_boot" ] || fail "Device rebooted; start manual capture again"
+  case "$stamp" in ''|*[!0-9.:' '-]*) fail "Invalid capture timestamp";; esac
+  component='manual launch'
+else
 component="$(cmd package resolve-activity --brief --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER "$pkg" 2>/dev/null | tail -n 1)"
 case "$component" in "$pkg/"*) ;; *) fail "No launcher activity for selected browser";; esac
 case "$component" in *[!A-Za-z0-9_./\$]*) fail "Invalid launcher activity";; esac
+fi
 tmp="$(mktemp -d "$d/.selfcheck.XXXXXX")" || fail "Cannot create capture directory"
 logger=''
 cleanup() {
@@ -35,12 +58,36 @@ trap 'exit 1' HUP INT TERM
   printf 'Target: %s\n' "$pkg"
   printf 'Start: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
   printf 'Launcher: %s\n' "$component"
-  printf 'Previous main PIDs: '; pidof "$pkg" 2>/dev/null || echo none
-  echo 'Capture running; reopen WebUI and read previous self-check after launch.'
+  if [ "$mode" = manual-finish ]; then
+    printf 'Manual capture start: %s\nPrevious main PIDs: %s\n' "$stamp" "${old:-none}"
+  else
+    printf 'Previous main PIDs: '; pidof "$pkg" 2>/dev/null || echo none
+    echo 'Capture running; reopen WebUI and read previous self-check after launch.'
+  fi
 } > "$tmp/report"
 cp "$tmp/report" "$tmp/main" && mv -f "$tmp/main" "$last" || fail "Cannot store self-check status"
 lc=/system/bin/logcat
 [ -x "$lc" ] || lc=logcat
+valid=0
+if [ "$mode" = manual-finish ]; then
+  now="$(pidof "$pkg" 2>/dev/null || true)"
+  : > "$tmp/pids"
+  for pid in $now; do
+    case " $old " in *" $pid "*) ;; *) echo "$pid" >> "$tmp/pids";; esac
+  done
+  if [ -s "$tmp/pids" ]; then
+    if "$lc" -d -b main -b system -v threadtime -T "$stamp" 'ChromeXt-Zygisk:V' 'CXDiagnostics:V' 'CXStandalone:V' 'AndroidRuntime:E' '*:S' > "$tmp/events" 2>&1; then
+      valid=1
+      echo 'New main PID confirmed. Reading retained logcat from manual start; older entries may have rotated.' >> "$tmp/report"
+    else
+      echo 'Manual logcat read failed' >> "$tmp/report"
+      cat "$tmp/events" >> "$tmp/report"
+    fi
+  else
+    : > "$tmp/events"
+    echo 'No new main PID: manual cold start not verified. Force-stop from Android App info and retry.' >> "$tmp/report"
+  fi
+else
 # Start before force-stop so even early native callbacks or crashes are captured.
 "$lc" -b main -b system -v threadtime -T 1 'ChromeXt-Zygisk:V' 'CXDiagnostics:V' 'CXStandalone:V' 'AndroidRuntime:E' '*:S' > "$tmp/events" 2>&1 &
 logger=$!
@@ -54,8 +101,12 @@ else
     echo 'Force-stop returned success' >> "$tmp/report"
     sleep 1
     printf 'PIDs after force-stop: ' >> "$tmp/report"; pidof "$pkg" >> "$tmp/report" 2>/dev/null || echo none >> "$tmp/report"
-    am start --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$component" >> "$tmp/report" 2>&1
-    printf 'Launch command exit: %s\n' "$?" >> "$tmp/report"
+    if am start --user current -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$component" >> "$tmp/report" 2>&1; then
+      valid=1
+      echo 'Launch command returned success' >> "$tmp/report"
+    else
+      echo 'Launch command failed; use manual capture' >> "$tmp/report"
+    fi
     : > "$tmp/pids"
     for i in 1 2 3 4 5 6 7 8; do
       pidof "$pkg" >> "$tmp/pids" 2>/dev/null || true
@@ -67,6 +118,13 @@ else
   fi
 fi
 kill "$logger" 2>/dev/null; wait "$logger" 2>/dev/null; logger=''
+fi
+if [ "$valid" != 1 ]; then
+  printf '\nSelf-check incomplete: no verified launch/log capture; injection stages not evaluated. Use manual capture if ActivityManager calls fail.\n' >> "$tmp/report"
+  mv -f "$tmp/report" "$last" || fail "Cannot save self-check"
+  cat "$last"
+  exit
+fi
 # Include candidate PIDs even if the process crashed before polling saw it.
 touch "$tmp/pids"
 awk -v p="$pkg" 'index($0,"candidate process=" p " uid=") {print $3}' "$tmp/events" >> "$tmp/pids"
@@ -84,6 +142,9 @@ pids="$(tr ' ' '\n' < "$tmp/pids" | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
 } >> "$tmp/report"
 awk -v ids="$pids" 'BEGIN{n=split(ids,a," "); for(i=1;i<=n;i++) if(a[i]!="") wanted[a[i]]=1} $3 in wanted {print}' "$tmp/events" > "$tmp/main"
 {
+  if [ -z "$pids" ]; then
+    echo 'No main PID observed; startup not verified.'
+  fi
   printf '\n=== Main-process stages (log evidence, not proof of script execution) ===\n'
   for stage in 'onLoad' 'candidate process=' 'payload ready' 'postAppSpecialize' 'bootstrap start' 'DEX loader and JNI registration ready' 'Java entry reached' 'LSPlant init=1' 'Application.attach hook installed' 'Application.attach reached' 'BrowserRuntime load starting' 'BrowserRuntime load returned'; do
     if grep -Fq "$stage" "$tmp/main"; then printf '[observed] %s\n' "$stage"
