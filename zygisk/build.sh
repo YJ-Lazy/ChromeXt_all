@@ -10,14 +10,13 @@ cmake -S zygisk/native -B zygisk/build/native -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static \
   -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON
-cmake --build zygisk/build/native --target chromext cx-snapshot
+cmake --build zygisk/build/native --target chromext
 rm -rf zygisk/build/module
 rm -f zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
-mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses
-cp -a zygisk/module/. zygisk/build/module/
+mkdir -p zygisk/build/module/zygisk zygisk/build/module/payload zygisk/build/module/licenses zygisk/build/module/manager
+cp zygisk/module/* zygisk/build/module/
 git rev-parse HEAD > zygisk/build/module/build-revision
 READELF="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-echo "Checking native module ELF architecture and exported entry"
 "$READELF" -h zygisk/build/native/libchromext.so > zygisk/build/zygisk-header.txt
 "$READELF" --dyn-syms --wide zygisk/build/native/libchromext.so > zygisk/build/zygisk-symbols.txt
 python3 - <<'PY'
@@ -25,28 +24,11 @@ from pathlib import Path
 import re
 header = Path("zygisk/build/zygisk-header.txt").read_text()
 symbols = Path("zygisk/build/zygisk-symbols.txt").read_text()
-if not re.search(r"Machine:\s*AArch64\s*$", header, re.M):
-    raise SystemExit("ERROR: Native module is not AArch64")
-matches = [line for line in symbols.splitlines() if line.split() and line.split()[-1] == "zygisk_module_entry"]
-if not any(len(line.split()) >= 8 and line.split()[4] == "GLOBAL" and line.split()[5] == "DEFAULT" and line.split()[6].isdigit() for line in matches):
-    raise SystemExit("ERROR: Exported Zygisk module entry missing: " + repr(matches))
-print("Verified AArch64 Zygisk module entry:", matches[0].strip())
+assert re.search(r"Machine:\s*AArch64\s*$", header, re.M), "Native module is not AArch64"
+matches = [line.split() for line in symbols.splitlines() if line.split() and line.split()[-1] == "zygisk_module_entry"]
+assert any(len(m) >= 8 and m[4] == "GLOBAL" and m[5] == "DEFAULT" and m[6].isdigit() for m in matches), "Missing exported Zygisk entry"
 PY
-python3 - <<'PY'
-import pathlib, re
-native = pathlib.Path("zygisk/native/entry.cpp").read_text()
-targets = re.search(r'constexpr std::array targets\{([^\n]+)\};', native)
-assert targets
-packages = re.findall(r'"([A-Za-z0-9_.]+)"', targets.group(1))
-assert packages and len(packages) == len(set(packages))
-pathlib.Path("zygisk/build/module/supported.list").write_text("\n".join(packages) + "\n")
-PY
-node --check zygisk/build/module/webroot/app.js
-node --check zygisk/build/module/webroot/library.js
-bash zygisk/test-library.sh
 cp zygisk/build/native/libchromext.so zygisk/build/module/zygisk/arm64-v8a.so
-cp zygisk/build/native/cx-snapshot zygisk/build/module/cx-snapshot
-chmod 755 zygisk/build/module/cx-snapshot
 cp LICENSE zygisk/build/module/licenses/ChromeXt-LICENSE
 for entry in lsplant dobby xdl-wrapper/external/xDL; do
   name="$(basename "$entry")"
@@ -66,9 +48,9 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     for n in names:
         (dest / n).write_bytes(z.read(n))
 PY
-# APK is a build intermediate only; the resource archive is not installed.
-cp "$APK" zygisk/build/module/payload/resources.bin
-for script in customize.sh scope.sh library.sh diagnostics.sh selfcheck.sh service.sh; do
+cp "$APK" zygisk/build/ChromeXt-Zygisk-Manager-debug.apk
+cp "$APK" zygisk/build/module/manager/ChromeXt-Zygisk-Manager-debug.apk
+for script in customize.sh service.sh install-manager.sh; do
   sh -n "zygisk/build/module/$script"
   chmod 755 "zygisk/build/module/$script"
 done
@@ -77,18 +59,16 @@ python3 - "$APK" <<'PY'
 import io, pathlib, sys, zipfile
 path = pathlib.Path("zygisk/build/ChromeXt-Zygisk-arm64-exp.zip")
 with zipfile.ZipFile(path) as outer:
-    required = {"module.prop", "customize.sh", "library.sh", "cx-snapshot", "diagnostics.sh", "selfcheck.sh", "service.sh", "build-revision",
+    required = {"module.prop", "customize.sh", "service.sh", "install-manager.sh",
                 "zygisk/arm64-v8a.so", "payload/classes.dex",
-                "payload/resources.bin", "supported.list", "scope.sh",
-                "webroot/index.html", "webroot/style.css", "webroot/app.js", "webroot/library.js"}
+                "manager/ChromeXt-Zygisk-Manager-debug.apk"}
     assert required <= set(outer.namelist()), required - set(outer.namelist())
-    assert not any(n.endswith(".apk") or n.endswith("install-manager.sh") for n in outer.namelist())
-    embedded = outer.read("payload/resources.bin")
+    embedded = outer.read("manager/ChromeXt-Zygisk-Manager-debug.apk")
     assert embedded == pathlib.Path(sys.argv[1]).read_bytes()
     with zipfile.ZipFile(io.BytesIO(embedded)) as inner:
         assert "assets/xposed_init" not in inner.namelist()
         for name in inner.namelist():
             if name.startswith("classes") and name.endswith(".dex"):
                 assert outer.read("payload/" + name) == inner.read(name), name
-print("Verified standalone WebUI and runtime payload:", path)
+print("Verified embedded manager and native payload:", path)
 PY

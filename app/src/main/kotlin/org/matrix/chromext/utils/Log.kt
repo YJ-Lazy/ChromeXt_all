@@ -6,9 +6,9 @@ import android.widget.Toast
 import de.robv.android.xposed.XposedBridge
 import java.lang.ref.WeakReference
 import org.matrix.chromext.BuildConfig
+import org.matrix.chromext.TAG
 
 object Log {
-  private const val TAG = "ChromeXt-Zygisk"
   private var lastToast: WeakReference<Toast>? = null
 
   fun i(msg: String) {

@@ -3,4 +3,4 @@ name=ChromeXt Zygisk
 version=4.2-exp1
 versionCode=24
 author=ChromeXt contributors / YJ-Lazy
-description=Standalone browser userscript runtime and WebUI; no manager APK installation.
+description=Standalone browser userscript runtime; includes and automatically installs matching manager APK.

@@ -39,13 +39,10 @@ object LogRecorder {
       return
     }
     worker.execute {
-      // Standalone module: WebUI reads the filtered logcat buffer. No installed provider.
-      android.util.Log.println(when(level) {
-        "ERROR" -> android.util.Log.ERROR
-        "WARN" -> android.util.Log.WARN
-        "DEBUG" -> android.util.Log.DEBUG
-        else -> android.util.Log.INFO
-      }, "CXStandalone", "[${ctx.packageName}] ${message.take(8192)}")
+      runCatching {
+        ctx.contentResolver.call(Uri.parse("content://org.matrix.chromext.diagnostics"),"append",null,
+          Bundle().apply { putString("level",level); putString("message",message.take(8192)) })
+      }.onFailure { android.util.Log.e("CXDiagnostics","Diagnostic IPC failed",it) }
     }
   }
   private fun file(context: Context) = File(context.filesDir,"module-diagnostics.log")

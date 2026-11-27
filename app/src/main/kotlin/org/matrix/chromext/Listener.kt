@@ -295,7 +295,7 @@ object Listener {
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(
-                    Icon.createWithResource(ctx.packageName, ctx.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info))
+                    Icon.createWithResource("org.matrix.chromext", R.drawable.ic_extension))
                 .setTimeoutAfter(timeout)
                 .setCategory(Notification.CATEGORY_MESSAGE)
                 .setAutoCancel(true)
