@@ -1,7 +1,7 @@
 plugins { id("com.android.application") }
 
 android {
-  compileSdk = 35
+  compileSdk = 37
   namespace = "org.matrix.chromext"
 
   defaultConfig {
