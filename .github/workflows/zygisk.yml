@@ -62,9 +62,9 @@ jobs:
           name: ChromeXt-Zygisk-Manager-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: warn
-      - name: Upload Zygisk ZIP
-        uses: actions/upload-artifact@v4
+      - name: Upload directly flashable Zygisk ZIP
+        uses: actions/upload-artifact@v7
         with:
-          name: ChromeXt-Zygisk-arm64-exp
           path: zygisk/build/ChromeXt-Zygisk-arm64-exp.zip
+          archive: false
           if-no-files-found: error
